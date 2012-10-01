@@ -14,18 +14,18 @@ module OMF::OML
   class OmlTuple < Tuple
     
     # Return the elements of the vector as an array
-    def to_a(include_index_ts = false)
-      res = []
-      r = @raw
-      if include_index_ts
-        res << @vprocs[:oml_ts].call(r)
-        res << @vprocs[:oml_seq_no].call(r)
-      end
-      @schema.each do |col|
-        res << @vprocs[col[:name]].call(r)
-      end
-      res
-    end
+    # def to_a(include_index_ts = false)
+      # res = []
+      # r = @raw
+      # if include_index_ts
+        # res << @vprocs[:oml_ts].call(r)
+        # res << @vprocs[:oml_seq_no].call(r)
+      # end
+      # @schema.each do |col|
+        # res << @vprocs[col[:name]].call(r)
+      # end
+      # res
+    # end
     
     def ts
       @raw[0].to_f
@@ -48,9 +48,11 @@ module OMF::OML
         @vprocs[name] = @vprocs[i] = case type      
           when :string
             lambda do |r| r[j] end
-          when :double
+          when :float
             lambda do |r| r[j].to_f end
-          else raise "Unrecognized OML type '#{type}'"
+          when :integer
+            lambda do |r| r[j].to_i end
+          else raise "Unrecognized OML type '#{type}' (#{col.inspect})"
         end
         i += 1
       end

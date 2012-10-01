@@ -25,12 +25,13 @@ module OMF::OML
 
     # Return the elements of the tuple as an array
     def to_a()
-      res = []
-      r = @raw
-      @schema.each do |col|
-        res << @vprocs[col[:name]].call(r)
-      end
-      res
+      # res = []
+      # r = @raw
+      # @schema.each do |col|
+        # res << @vprocs[col[:name]].call(r)
+      # end
+      # res
+      @schema.cast_row(@raw)
     end
 
     # Return an array including the values for the names elements
@@ -56,7 +57,8 @@ module OMF::OML
 
       @raw = []
 #      puts "SCHEMA: #{schema.inspect}"
-
+      @on_new_tuple_procs = {}
+      
       super name
       process_schema(@schema)
     end
@@ -70,10 +72,21 @@ module OMF::OML
     #
     def parse_tuple(els)
       @raw = els
-      @on_new_vector_proc.each_value do |proc|
+      @on_new_tuple_procs.each_value do |proc|
         proc.call(self)
       end
     end
+
+    # Register a proc to be called when a new tuple arrived 
+    #
+    def on_new_tuple(key = :_, &proc)
+      if proc
+        @on_new_tuple_procs[key] = proc
+      else
+        @on_new_tuple_procs.delete key
+      end
+    end
+
 
     protected
     def process_schema(schema)
@@ -85,7 +98,7 @@ module OMF::OML
         @vprocs[name] = @vprocs[i] = case type
           when :string
             lambda do |r| r[i] end
-          when :double 
+          when :float 
             lambda do |r| r[i].to_f end
           else raise "Unrecognized Schema type '#{type}'"
         end

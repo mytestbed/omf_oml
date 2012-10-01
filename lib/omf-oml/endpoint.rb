@@ -23,16 +23,16 @@ module OMF::OML
       end
     end
 
-    def initialize(port = 3000, host = "127.0.0.1")
+    def initialize(port = 3000, host = "0.0.0.0")
       require 'socket'
       @serv = TCPServer.new(host, port)
       @running = false
       @on_new_stream_procs = {}
     end
 
-    def report_new_stream(stream)
+    def report_new_stream(name, stream)
       @on_new_stream_procs.each_value do |proc|
-        proc.call(stream)
+        proc.call(name, stream)
       end
     end
 
@@ -56,12 +56,12 @@ module OMF::OML
 
         Thread.new do
           begin
-            conn = OmlConnection.new(self)
+            conn = OmlSession.new(self)
             conn.run(sock)
             debug "OML client disconnected: #{sock}"
           rescue Exception => ex
-            error "Exception in OmlConnection: #{ex}"
-            debug "Exception in OmlConnection: #{ex.backtrace.join("\n\t")}"
+            error "Exception: #{ex}"
+            debug "Exception: #{ex.backtrace.join("\n\t")}"
           ensure
             sock.close
           end
@@ -103,6 +103,7 @@ module OMF::OML
     private
     def parse_header(socket, &reportStreamProc)
       while (l = socket.gets.strip)
+        #puts "H>> '#{l}'"        
         return if l.length == 0
 
         key, *value = l.split(':')
@@ -120,37 +121,28 @@ module OMF::OML
       els = desc.split(' ')
       #puts "ELS: #{els.inspect}"
       index = els.shift.to_i - 1
-
       sname = els.shift
-      schema = els.collect do |el|
+      schema_desc = els.collect do |el|
         name, type = el.split(':')
         {:name => name.to_sym, :type => type.to_sym}
       end
-
-      @streams[index] = row = OmlTuple.new(schema, sname)
-      @endpoint.report_new_stream(row)
+      schema_desc.insert(0, {:name => :xoml_ts, :type => :double})
+      schema_desc.insert(1, {:name => :oml_seq_no, :type => :integer})      
+      schema = OMF::OML::OmlSchema.create(schema_desc)
+      @streams[index] = tuple = OmlTuple.new(sname, schema)
+      @endpoint.report_new_stream(sname, tuple)
     end
 
     def parse_rows(socket)
       while (l = socket.gets)
         return if l.length == 0
 
-        els = l.split("\t")
+        els = l.strip.split("\t")
+        #puts "R>> '#{els.inspect}'"
         index = els.delete_at(1).to_i - 1
-        row = @streams[index].parse_row(els)
+        row = @streams[index].parse_tuple(els)
       end
     end
-
-    # def parse_row(els, sindex)
-      # ts, index, *rest = els
-      # row = {:oml_sname => @name, :oml_ts => ts.to_f, :oml_seq_no => index.to_i}
-      # rest.each_index do |i|
-        # name, unused, typeProc = @schema[i]
-        # value = rest[i]
-        # row[name] = typeProc.call(value)
-      # end
-      # add_row(row)
-    # end
 
   end # OMLEndpoint
 

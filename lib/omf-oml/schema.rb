@@ -22,6 +22,8 @@ module OMF::OML
     ANY2TYPE = {
       'integer' => :integer,
       'int' => :integer,
+      'int32' => :integer,
+      'int64' => :integer,
       'bigint' => :integer,
       'unsigned integer' => :integer,
       'float' => :float,
