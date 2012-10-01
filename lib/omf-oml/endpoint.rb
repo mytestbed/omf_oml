@@ -23,7 +23,7 @@ module OMF::OML
       end
     end
 
-    def initialize(port = 3000, host = "0.0.0.0")
+    def initialize(port = 5000, host = "0.0.0.0")
       require 'socket'
       @serv = TCPServer.new(host, port)
       @running = false
@@ -126,20 +126,23 @@ module OMF::OML
         name, type = el.split(':')
         {:name => name.to_sym, :type => type.to_sym}
       end
-      schema_desc.insert(0, {:name => :xoml_ts, :type => :double})
-      schema_desc.insert(1, {:name => :oml_seq_no, :type => :integer})      
+      schema_desc.insert(0, {:name => :oml_ts, :type => :double})
+      schema_desc.insert(1, {:name => :sender_id, :type => :string})
+      schema_desc.insert(2, {:name => :oml_seq_no, :type => :integer})            
       schema = OMF::OML::OmlSchema.create(schema_desc)
       @streams[index] = tuple = OmlTuple.new(sname, schema)
       @endpoint.report_new_stream(sname, tuple)
     end
 
     def parse_rows(socket)
+      sender_id = @header['sender-id'] || 'unknown'
       while (l = socket.gets)
         return if l.length == 0
 
         els = l.strip.split("\t")
         #puts "R>> '#{els.inspect}'"
         index = els.delete_at(1).to_i - 1
+        els.insert(1, sender_id)
         row = @streams[index].parse_tuple(els)
       end
     end
