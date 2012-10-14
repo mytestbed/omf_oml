@@ -134,22 +134,29 @@ module OMF::OML
     
     def each_column(&block)
       @schema.each do |c| 
-       block.call(c) 
+        block.call(c) 
       end
     end
     
     # Translate a record described in a hash of 'col_name => value'
     # to a row array
     #
+    # hrow - Hash describing a row
+    # set_nil_when_missing - If true, set any columns not described in hrow to nil
+    #
     def hash_to_row(hrow, set_nil_when_missing = false)
-      @schema.collect do |cdescr|
+      r = @schema.collect do |cdescr|
         cname = cdescr[:name]
+        next nil if cname == :__id__
         unless hrow.key? cname
           next nil if set_nil_when_missing
           raise "Missing record element '#{cname}' in record '#{hrow}'"
         end
         cdescr[:type_conversion].call(hrow[cname])
       end
+      r.shift # remove __id__ columns
+      #puts "#{r.inspect} -- #{@schema.map {|c| c[:name]}.inspect}"
+      r
     end
     
     # Cast each element in 'row' into its proper type according to this schema

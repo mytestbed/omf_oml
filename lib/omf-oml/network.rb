@@ -38,7 +38,7 @@ module OMF::OML
     #
     def initialize(name = nil, attributes = {})
       super name
-      @name = name
+      @name = name || "nw_#{object_id}"
       @attributes = attributes
       @nodes = {}
       @name2node = {}
@@ -198,61 +198,79 @@ module OMF::OML
     # Creates two tables, one capturing the link state and one for the node state.
     # Returns the two tables in a hash with keys 'nodes' and 'links'.
     #
-    def to_tables(table_opts = {})
-      node_table = OmlTable.new 'nodes', @node_schema, table_opts
-      @nodes.each do |id, n|
-        node_table.add_row @node_schema.hash_to_row(n.attributes)
-      end
-
-      link_table = OmlTable.new 'links', @link_schema, table_opts
-      @links.each do |id, l|
-        link_table.add_row @link_schema.hash_to_row(l.attributes)
-      end
-      
-      on_update "__to_tables_#{node_table.object_id}" do |a|
-        a.each do |e|
-          if e.kind_of? NetworkNode
-            node_table.add_row @node_schema.hash_to_row(e.attributes)
-          else
-            link_table.add_row @link_schema.hash_to_row(e.attributes)
-          end
-        end
-      end
-      {:nodes => node_table, :links => link_table}
-      #{:nodes => to_table(:nodes, table_opts), :links => to_table(:links, table_opts)}
-    end
+    # def to_tables(table_opts = {})
+      # node_table = OmlTable.new 'nodes', @node_schema, table_opts
+      # @nodes.each do |id, n|
+        # node_table.add_row @node_schema.hash_to_row(n.attributes)
+      # end
+# 
+      # link_table = OmlTable.new 'links', @link_schema, table_opts
+      # @links.each do |id, l|
+        # link_table.add_row @link_schema.hash_to_row(l.attributes)
+      # end
+#       
+      # on_update "__to_tables_#{node_table.object_id}" do |a|
+        # a.each do |e|
+          # if e.kind_of? NetworkNode
+            # node_table.add_row @node_schema.hash_to_row(e.attributes)
+          # else
+            # link_table.add_row @link_schema.hash_to_row(e.attributes)
+          # end
+        # end
+      # end
+      # {:nodes => node_table, :links => link_table}
+      # #{:nodes => to_table(:nodes, table_opts), :links => to_table(:links, table_opts)}
+    # end
     
-    # Create a table to track and aspect of this network. 
+    # Create a table to track an aspect of this network. 
     #
-    # @param aspect - Either nodes or links 
+    # aspect - Either :nodes or :links 
     #
     def to_table(aspect, table_opts = {})
       aspect = aspect.to_sym
       case aspect
       when :nodes
-        table = OmlTable.new 'nodes', @node_schema, table_opts
-        @nodes.each do |id, n|
-          table.add_row @node_schema.hash_to_row(n.attributes)
-        end
+        table = OmlTable.create @name + '/nodes', @node_schema, table_opts
+        table.add_rows(@nodes.map do |id, n|
+          @node_schema.hash_to_row(n.attributes)
+        end)
+        on_update "__to_tables_nodes_#{table.object_id}" do |a|
+          nodes = a.map do |e|
+            e.kind_of?(NetworkNode) ? @node_schema.hash_to_row(e.attributes) : nil
+          end.compact
+          table.add_rows(nodes) unless nodes.empty?
+        end          
+        
       when :links
-        table = OmlTable.new 'links', @link_schema, table_opts
-        @links.each do |id, l|
-          table.add_row @link_schema.hash_to_row(l.attributes)
-        end
+        table = OmlTable.create @name + '/links', @link_schema, table_opts
+        # @links.each do |id, l|
+          # table.add_row @link_schema.hash_to_row(l.attributes)
+        # end
+        table.add_rows(@links.map do |id, n|
+          @link_schema.hash_to_row(n.attributes)
+        end)
+        on_update "__to_tables_links_#{table.object_id}" do |a|
+          links = a.map do |e|
+            e.kind_of?(NetworkLink) ? @link_schema.hash_to_row(e.attributes) : nil
+          end.compact
+          table.add_rows(links) unless links.empty?
+        end         
+        
       else
         raise "Unknown aspect '#{aspect}'. Should be either 'nodes' or 'links'."
       end
       
-      on_update "__to_tables_#{table.object_id}" do |a|
-        a.each do |e|
-          if aspect == :nodes && e.kind_of?(NetworkNode)
-            table.add_row @node_schema.hash_to_row(e.attributes)
-          end
-          if aspect == :links && e.kind_of?(NetworkLink)
-            table.add_row @link_schema.hash_to_row(e.attributes)
-          end
-        end
-      end
+      # on_update "__to_tables_#{table.object_id}" do |a|
+        # a.each do |e|
+          # if aspect == :nodes && e.kind_of?(NetworkNode)
+            # table.add_row @node_schema.hash_to_row(e.attributes)
+          # end
+          # if aspect == :links && e.kind_of?(NetworkLink)
+            # table.add_row @link_schema.hash_to_row(e.attributes)
+          # end
+        # end
+      # end
+      
       table
     end
     
