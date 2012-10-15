@@ -2,9 +2,9 @@
 require 'sqlite3'
 
 require 'omf_common/lobject'
-require 'omf-oml/endpoint'
-require 'omf-oml/tuple'
-require 'omf-oml/sql_row'
+require 'omf_oml/endpoint'
+require 'omf_oml/tuple'
+require 'omf_oml/sql_row'
 
 module OMF::OML
 
@@ -110,7 +110,7 @@ end
 
 if $0 == __FILE__
 
-  require 'omf-oml/table'
+  require 'omf_oml/table'
   ep = OMF::OML::OmlSqlSource.new('brooklynDemo.sq3')
   ep.on_new_stream() do |s|
     puts ">>>>>>>>>>>> New stream #{s.stream_name}: #{s.names.join(', ')}"

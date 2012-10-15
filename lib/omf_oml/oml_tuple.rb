@@ -1,7 +1,7 @@
 
 require 'omf_oml'
-require 'omf-oml/schema'
-require 'omf-oml/tuple'
+require 'omf_oml/schema'
+require 'omf_oml/tuple'
 
 module OMF::OML
   

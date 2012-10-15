@@ -1,9 +1,9 @@
 # -*- encoding: utf-8 -*-
 $:.push File.expand_path("../lib", __FILE__)
-require "omf-oml/version"
+require "omf_oml/version"
 
 Gem::Specification.new do |s|
-  s.name        = "omf-oml"
+  s.name        = "omf_oml"
 #  s.version     = OmfWeb::VERSION
   s.version     = OMF::OML::VERSION
   s.authors     = ["NICTA"]
@@ -13,7 +13,7 @@ Gem::Specification.new do |s|
   s.description = %q{Glue functionality between OMF and OMF related libraries, such as OMF Web and Labwiki, and
     OML.}
 
-  s.rubyforge_project = "omf-oml"
+  s.rubyforge_project = "omf_oml"
 
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")

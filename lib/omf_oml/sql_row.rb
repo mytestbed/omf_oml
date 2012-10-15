@@ -1,5 +1,5 @@
 
-require 'omf-oml/tuple'
+require 'omf_oml/tuple'
 
 module OMF::OML
         
@@ -281,7 +281,7 @@ end
 
 if $0 == __FILE__
 
-  require 'omf-oml/table'
+  require 'omf_oml/table'
   ep = OMF::OML::OmlSqlSource.new('brooklynDemo.sq3')
   ep.on_new_stream() do |s|
     puts ">>>>>>>>>>>> New stream #{s.stream_name}: #{s.names.join(', ')}"

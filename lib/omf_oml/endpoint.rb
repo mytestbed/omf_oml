@@ -2,7 +2,7 @@
 require 'omf_common/lobject'
 require 'omf_oml'
 
-require 'omf-oml/oml_tuple'
+require 'omf_oml/oml_tuple'
 
 module OMF::OML
 
@@ -154,7 +154,7 @@ end
 
 if $0 == __FILE__
 
-  require 'omf-oml/table'
+  require 'omf_oml/table'
   ep = OMF::OML::OmlEndpoint.new(3000)
   toml = OMF::OML::OmlTable.new('oml', [[:x], [:y]], :max_size => 20)
   ep.on_new_stream() do |s|

@@ -3,7 +3,7 @@ require 'monitor'
 
 require 'omf_common/lobject'
 require 'omf_oml'
-require 'omf-oml/schema'
+require 'omf_oml/schema'
 
 
 
@@ -16,7 +16,7 @@ module OMF::OML
     
     def self.create(tname, schema, opts = {}, &on_before_row_added)
       if (index = opts.delete(:index))
-        require 'omf-oml/indexed_table'
+        require 'omf_oml/indexed_table'
         OmlIndexedTable.new(tname, index, schema, &on_before_row_added)        
       else
         OmlTable.new(tname, schema, opts, &on_before_row_added)
@@ -117,7 +117,7 @@ module OMF::OML
     # col_name - Name of column to use for indexing
     #
     def indexed_by(col_name)
-      require 'omf-oml/indexed_table'
+      require 'omf_oml/indexed_table'
       OmlIndexedTable.shadow(self, col_name)
     end
     
