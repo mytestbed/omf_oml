@@ -38,13 +38,6 @@ module OMF::OML
       end
     end
 
-
-    # def report_new_stream(stream)
-      # @on_new_stream_procs.each_value do |proc|
-        # proc.call(stream)
-      # end
-    # end
-
     # Start checking the database for tables and create a new stream
     # by calling the internal +report_new_table+ method.
     # If +check_every+ > 0 continue checking every +check_every+ seconds

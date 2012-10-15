@@ -253,7 +253,7 @@ module OMF::OML
         row_cnt += 1
       end
       @offset += row_cnt
-      debug "Read #{row_cnt}/#{@offset} rows from '#{@sname}'"
+      debug "Read #{row_cnt}/#{@offset} rows from '#{@sname}'" if row_cnt > 0
       row_cnt >= @limit # there could be more to read     
     end
     
