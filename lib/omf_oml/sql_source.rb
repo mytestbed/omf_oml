@@ -1,5 +1,5 @@
 
-require 'sqlite3'
+require 'sequel'
 
 require 'omf_common/lobject'
 require 'omf_oml/endpoint'
@@ -16,15 +16,19 @@ module OMF::OML
   #
   class OmlSqlSource < OMF::Common::LObject
 
-    # +opts+ - passed on as +opts+ to the OmlSqlRow constructor
+    # db_opts - Options used to create a Sequel adapter
     #
-    def initialize(db_file, opts = {})
-      raise "Can't find database '#{db_file}'" unless File.readable?(db_file)
-      @db_file = db_file
+    # Sequel.connect(:adapter=>'postgres', :host=>'norbit.npc.nicta.com.au', :user=>'oml2', :password=>'omlisgoodforyou', :database=>'openflow-demo')
+    #
+    def initialize(db_opts, row_opts = {})
       @running = false
       @on_new_stream_procs = {}
       @tables = {}
-      @table_opts = opts
+      @db_opts = db_opts
+      puts "Opening DB (#{db_opts})"
+      @db = Sequel.connect(db_opts)
+      puts "DB: #{@db.inspect}"
+      @row_opts = row_opts
     end
 
     # Register a proc to be called when a new stream was
@@ -64,16 +68,18 @@ module OMF::OML
     end
 
     def run_once()
-      unless @db
-        @db = SQLite3::Database.new(@db_file)
-        @db.type_translation = true
-      end
-
+      puts "FINDING TABLES #{@db.tables}"
       # first find tables
-      @db.execute( "SELECT * FROM sqlite_master WHERE type='table';") do |r|
-        table_name = r[1]
-        report_new_table(table_name, @table_opts) unless table_name.start_with?('_')
+      @db.tables.each do |tn|
+        table_name = tn.to_s
+        report_new_table(table_name) unless table_name.start_with?('_')
       end
+      @tables
+      
+      # postgresql
+      # SELECT tablename FROM pg_tables
+      # WHERE tablename NOT LIKE Ôpg\\_%Õ
+      # AND tablename NOT LIKE Ôsql\\_%Õ;       
     end
 
 
@@ -86,13 +92,15 @@ module OMF::OML
     # +on_new_stream+ is then called with the new stream as its single
     # argument.
     #
-    def report_new_table(table_name, opts = {})
-      return if @tables.key?(table_name) # check if already reported before
-      debug "Found table: #{table_name}"
-      t = @tables[table_name] = OmlSqlRow.new(table_name, @db_file, self, opts)
-      @on_new_stream_procs.each_value do |proc|
-        proc.call(t)
+    def report_new_table(table_name)
+      unless table =  @tables[table_name] # check if already reported before
+        debug "Found table: #{table_name}"
+        table = @tables[table_name] = OmlSqlRow.new(table_name, @db.schema(table_name), @db_opts, self, @row_opts)
+        @on_new_stream_procs.each_value do |proc|
+          proc.call(table)
+        end
       end
+      table
     end
     
   end

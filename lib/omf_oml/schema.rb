@@ -26,6 +26,7 @@ module OMF::OML
       'int64' => :integer,
       'bigint' => :integer,
       'unsigned integer' => :integer,
+      'unsigned bigint' => :integer,
       'float' => :float,
       'real' => :float,
       'double' => :float,
@@ -108,7 +109,7 @@ module OMF::OML
           type = :string
         end
       else
-        warn "Missing type definition in '#{col[:name]}', default to 'string'"          
+        warn "Missing type definition in '#{col[:name]}', default to 'string' (#{col.inspect})"          
         type = :string
       end
       col[:type] = type
@@ -144,15 +145,16 @@ module OMF::OML
     # hrow - Hash describing a row
     # set_nil_when_missing - If true, set any columns not described in hrow to nil
     #
-    def hash_to_row(hrow, set_nil_when_missing = false)
+    def hash_to_row(hrow, set_nil_when_missing = false, call_type_conversion = true)
+      #puts "HASH2A => #{hrow.inspect}"
       r = @schema.collect do |cdescr|
         cname = cdescr[:name]
         next nil if cname == :__id__
-        unless hrow.key? cname
+        unless (v = hrow[cname]) ||  (v = hrow[cname.to_sym])
           next nil if set_nil_when_missing
           raise "Missing record element '#{cname}' in record '#{hrow}'"
         end
-        cdescr[:type_conversion].call(hrow[cname])
+        call_type_conversion ? cdescr[:type_conversion].call(v) : v
       end
       r.shift # remove __id__ columns
       #puts "#{r.inspect} -- #{@schema.map {|c| c[:name]}.inspect}"

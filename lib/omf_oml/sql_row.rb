@@ -10,15 +10,23 @@ module OMF::OML
   # with a call to +run+.
   #
   class OmlSqlRow < OmlTuple
+    attr_reader :row
     
-    # *opts:  
+    # 
+    # Create a representation of a row in a database. Can be used to fill a table.
+    #
+    # table_name - name table in respective SQL database
+    # schema_raw - a hash returned by the sequel library's #schema method
+    # db_opts - Enough information to open a Sequel database adapter
+    # source - Reference to the SqlSource which created this instance
+    # opts:  
     #   - offset: Ignore first +offset+ rows. If negative or zero serve +offset+ rows initially
     #   - limit: Number of rows to fetch each time [1000]
     #   - check_interval: Interval in seconds when to check for new data. If 0, only run once.
     #
-    def initialize(table_name, db_file, source, opts = {})
+    def initialize(table_name, schema_raw, db_opts, source, opts = {})
       @sname = table_name
-      @db_file = db_file
+      @db_opts = db_opts
       @source = source
       
       unless @offset = opts[:offset]
@@ -33,7 +41,7 @@ module OMF::OML
 
       @on_new_vector_proc = {}
 
-      schema = find_schema
+      schema = parse_schema(schema_raw)
       super table_name, schema 
     end
     
@@ -47,7 +55,8 @@ module OMF::OML
     
     # Return the elements of the vector as an array
     def to_a(include_oml_internals = false)
-      include_oml_internals ? @row.dup : @row[4 .. -1]
+      a = @schema.hash_to_row(@row, false, false) # don't need type conversion as sequel is doing this for us
+      include_oml_internals ? a : a[4 .. -1]
     end
     
     # Return an array including the values for the names elements
@@ -163,22 +172,16 @@ module OMF::OML
 
     protected
         
-    def find_schema()
-      stmt = _statement
-      cnames = stmt.columns
-      ctypes = stmt.types
-      schema = []
-      #schema << {:name => :oml_sender, :type => 'STRING'}
-      cnames.size.times do |i|
-        name = cnames[i].to_sym
-        schema << {:name => name, :type => ctypes[i]}
+    def parse_schema(raw)
+      #puts ">> PARSE SCHEMA"
+      sd = raw.collect do |col| 
+        name, opts = col
+        #puts col.inspect
+        {:name => name, :type => opts[:db_type]}
       end
-      # Rename first col
-      first = schema[0]
-      raise "BUG: Should be 'name'" if first[:name] != :name
-      first[:name] = :oml_sender
-      
-      OmlSchema.new(schema)
+      # Query we are using is adding the 'oml_sender_name' to the front of the table
+      sd.insert(0, :name => 'oml_sender', :type => :string)
+      OmlSchema.new(sd)
     end
     
     # override
@@ -197,16 +200,6 @@ module OMF::OML
     def run(in_thread = true)
       return if @running
       if in_thread
-        if @db
-          # force opening of database in new thread
-          begin
-            @db.close
-          rescue Exception
-            # ALERT: issues with finalising statments, don't know how to deal with it
-          end
-          @db = nil
-          @stmt = nil
-        end
         Thread.new do
           begin
             _run
@@ -223,6 +216,8 @@ module OMF::OML
     private
     
     def _run
+      @db = Sequel.connect(@db_opts)
+      
       if @check_interval <= 0
         _run_once
       else
@@ -245,7 +240,16 @@ module OMF::OML
     # Return true if there might be more rows in the database
     def _run_once
       row_cnt = 0
-      _statement.execute(@limit, @offset).each do |r|
+      t = table_name = @sname
+      if (@offset < 0)
+        cnt = @db[table_name.to_sym].count()
+        @offset = cnt + @offset # @offset was negative here
+        debug("Initial offset #{@offset} in '#{table_name}' with #{cnt} rows")
+        @offset = 0 if @offset < 0
+      end
+      @db["SELECT _senders.name as oml_sender, #{t}.* FROM #{t} INNER JOIN _senders ON (_senders.id = #{t}.oml_sender_id) LIMIT #{@limit} OFFSET #{@offset};"].each do |r|
+      #@db["SELECT _senders.name as oml_sender, #{t}.* FROM #{t} JOIN _senders WHERE #{t}.oml_sender_id = _senders.id LIMIT #{@limit} OFFSET #{@offset};"].each do |r|
+        #puts "ROW>>> #{r.inspect}"
         @row = r
         @on_new_vector_proc.each_value do |proc|
           proc.call(self)
@@ -257,23 +261,23 @@ module OMF::OML
       row_cnt >= @limit # there could be more to read     
     end
     
-    def _statement
-      unless @stmt
-        db = @db = SQLite3::Database.new(@db_file)
-        @db.type_translation = true   
-        table_name = t = @sname  
-        if @offset < 0
-          cnt = db.execute("select count(*) from #{table_name};")[0][0].to_i
-          #debug "CNT: #{cnt}.#{cnt.class} offset: #{@offset}"
-          @offset = cnt + @offset # @offset was negative here
-          debug("Initial offset #{@offset} in '#{table_name}' with #{cnt} rows")
-          @offset = 0 if @offset < 0
-        end
-        #@stmt = db.prepare("SELECT * FROM #{table_name} LIMIT ? OFFSET ?;")
-        @stmt = db.prepare("SELECT _senders.name, #{t}.* FROM #{t} JOIN _senders WHERE #{t}.oml_sender_id = _senders.id LIMIT ? OFFSET ?;")
-      end
-      @stmt
-    end
+    # def _statement
+      # unless @stmt
+        # db = @db = SQLite3::Database.new(@db_file)
+        # @db.type_translation = true   
+        # table_name = t = @sname  
+        # if @offset < 0
+          # cnt = db.execute("select count(*) from #{table_name};")[0][0].to_i
+          # #debug "CNT: #{cnt}.#{cnt.class} offset: #{@offset}"
+          # @offset = cnt + @offset # @offset was negative here
+          # debug("Initial offset #{@offset} in '#{table_name}' with #{cnt} rows")
+          # @offset = 0 if @offset < 0
+        # end
+        # #@stmt = db.prepare("SELECT * FROM #{table_name} LIMIT ? OFFSET ?;")
+        # @stmt = db.prepare("SELECT _senders.name, #{t}.* FROM #{t} JOIN _senders WHERE #{t}.oml_sender_id = _senders.id LIMIT ? OFFSET ?;")
+      # end
+      # @stmt
+    # end
   end # OmlSqlRow
 
 
