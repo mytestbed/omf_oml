@@ -25,15 +25,18 @@ module OMF::OML
       'int32' => :integer,
       'int64' => :integer,
       'bigint' => :integer,
+      'smallint' => :integer,
       'unsigned integer' => :integer,
       'unsigned bigint' => :integer,
       'float' => :float,
       'real' => :float,
       'double' => :float,
+      'double precision' => :float,
       'text' => :string,
       'string' => :string,
       'date' => :date,
       'dateTime'.downcase => :dateTime, # should be 'datetime' but we downcase the string for comparison
+      'timestamp' => :dateTime, # Postgreql specific, not sure if this works as it.
       'key' => :key,      
     }
 
@@ -163,14 +166,15 @@ module OMF::OML
     
     # Cast each element in 'row' into its proper type according to this schema
     #
-    def cast_row(raw_row)
-      unless raw_row.length == @schema.length
-        raise "Row needs to have same size as schema (#{raw_row.inspect})"
+    def cast_row(raw_row, ignore_first_column = false)
+      start_index = ignore_first_column ? 1 : 0
+      unless raw_row.length == @schema.length - start_index
+        raise "Row needs to have same size as schema (#{raw_row.inspect}-#{describe}) "
       end
       # This can be done more elegantly in 1.9
       row = []
       raw_row.each_with_index do |el, i|
-        row << @schema[i][:type_conversion].call(el)
+        row << @schema[i + start_index][:type_conversion].call(el)
       end
       row
     end

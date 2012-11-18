@@ -178,7 +178,7 @@ module OMF::OML
     #
     def _add_row(row, needs_casting = false)
       if needs_casting
-        row = @schema.cast_row(row)
+        row = @schema.cast_row(row, true)
       end
       #puts row.inspect
       if @on_before_row_added

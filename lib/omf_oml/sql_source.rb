@@ -25,9 +25,9 @@ module OMF::OML
       @on_new_stream_procs = {}
       @tables = {}
       @db_opts = db_opts
-      puts "Opening DB (#{db_opts})"
+      debug "Opening DB (#{db_opts})"
       @db = Sequel.connect(db_opts)
-      puts "DB: #{@db.inspect}"
+      debug "DB: #{@db.inspect}"
       @row_opts = row_opts
     end
 
@@ -68,7 +68,7 @@ module OMF::OML
     end
 
     def run_once()
-      puts "FINDING TABLES #{@db.tables}"
+      debug "Finding tables #{@db.tables}"
       # first find tables
       @db.tables.each do |tn|
         table_name = tn.to_s
