@@ -50,7 +50,10 @@ module OMF::OML
     # Return the col name at a specific index
     #
     def name_at(index)
-      @schema[index][:name]
+      unless d = @schema[index]
+        raise "Index '#{index}' out of bounds"
+      end
+      d[:name]
     end
     
     # Return the col index for column named +name+
@@ -143,23 +146,27 @@ module OMF::OML
     end
     
     # Translate a record described in a hash of 'col_name => value'
-    # to a row array
+    # to a row array. Note: Will suppress column '__id__'
     #
     # hrow - Hash describing a row
     # set_nil_when_missing - If true, set any columns not described in hrow to nil
     #
     def hash_to_row(hrow, set_nil_when_missing = false, call_type_conversion = true)
       #puts "HASH2A => #{hrow.inspect}"
+      remove_first_col = false
       r = @schema.collect do |cdescr|
         cname = cdescr[:name]
-        next nil if cname == :__id__
+        if cname == :__id__
+          remove_first_col = true
+          next nil
+        end
         unless (v = hrow[cname]) ||  (v = hrow[cname.to_sym])
           next nil if set_nil_when_missing
           raise "Missing record element '#{cname}' in record '#{hrow}'"
         end
         call_type_conversion ? cdescr[:type_conversion].call(v) : v
       end
-      r.shift # remove __id__ columns
+      r.shift if remove_first_col # remove __id__ columns
       #puts "#{r.inspect} -- #{@schema.map {|c| c[:name]}.inspect}"
       r
     end
@@ -185,6 +192,12 @@ module OMF::OML
     
     def to_json(*opt)
       describe.to_json(*opt)
+    end
+    
+    def clone()
+      c = self.dup
+      c.instance_variable_set('@schema', @schema.clone)
+      c
     end
     
     protected

@@ -50,7 +50,14 @@ module OMF::OML
     # by it's name, or its col index
     #
     def [](name_or_index)
-      @vprocs[name_or_index].call(@raw)
+      if name_or_index.is_a? Integer
+        @row[@schema.name_at_index(name_or_index)]
+      else
+        unless @row.key? name_or_index
+          raise "Unknown column name '#{name_or_index}'"
+        end 
+        @row[name_or_index]
+      end
     end
     
     # Return the elements of the vector as an array
@@ -180,7 +187,7 @@ module OMF::OML
         {:name => name, :type => opts[:db_type]}
       end
       # Query we are using is adding the 'oml_sender_name' to the front of the table
-      sd.insert(0, :name => 'oml_sender', :type => :string)
+      sd.insert(0, :name => :oml_sender, :type => :string)
       OmlSchema.new(sd)
     end
     
@@ -191,6 +198,7 @@ module OMF::OML
       schema.each_column do |col|
         name = col[:name]
         j = i + 0
+        puts "SCHEMA: '#{name.inspect}'-#{j}"
         l = @vprocs[name] = lambda do |r| r[j] end
         @vprocs[i - 4] = l if i > 4
         i += 1
