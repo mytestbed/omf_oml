@@ -72,9 +72,10 @@ module OMF::OML
     def select(*col_names)
       r = @row
       col_names.collect do |n|
-        p = @vprocs[n]
-        #puts "#{n}::#{p}"
-        p ? p.call(r) : nil
+        unless @row.key? n
+          raise "Unknown column name '#{n}'"
+        end 
+        @row[n]
       end
     end
         
@@ -193,16 +194,15 @@ module OMF::OML
     
     # override
     def process_schema(schema)
-      i = 0
-      @vprocs = {}
-      schema.each_column do |col|
-        name = col[:name]
-        j = i + 0
-        puts "SCHEMA: '#{name.inspect}'-#{j}"
-        l = @vprocs[name] = lambda do |r| r[j] end
-        @vprocs[i - 4] = l if i > 4
-        i += 1
-      end
+      # i = 0
+      # @vprocs = {}
+      # schema.each_column do |col|
+        # name = col[:name]
+        # j = i + 0
+        # l = @vprocs[name] = lambda do |r| r[j] end
+        # @vprocs[i - 4] = l if i > 4
+        # i += 1
+      # end
     end
     
     def run(in_thread = true)
