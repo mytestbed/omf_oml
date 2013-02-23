@@ -41,6 +41,21 @@ module OMF::OML
         @on_new_stream_procs.delete key
       end
     end
+    
+    # Return a table (more precisely an OmlTable instance) fed from 
+    # the content of a table 'table_name' in this database.
+    #
+    # table_name - Name of table in this database
+    # opts - 
+    #   :include_oml_internals - Include OML 'header' columns [true]
+    #   :name - name used for returned OML Table [table_name]
+    #   All other options defined for OmlSqlRow#new
+    #
+    def create_table(table_name, opts)
+      tn = opts.delete(:name) || table_name
+      r = OmlSqlRow.new(table_name, @db.schema(table_name), @db_opts, self, opts)
+      r.to_table(tn, opts)
+    end
 
     # Start checking the database for tables and create a new stream
     # by calling the internal +report_new_table+ method.

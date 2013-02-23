@@ -34,11 +34,20 @@ module OMF::OML
       'double precision' => :float,
       'text' => :string,
       'string' => :string,
+      'varargs' => :string,
       'date' => :date,
       'dateTime'.downcase => :dateTime, # should be 'datetime' but we downcase the string for comparison
       'timestamp' => :dateTime, # Postgreql specific, not sure if this works as it.
       'key' => :key,      
     }
+    
+    OML_INTERNALS = [
+      :oml_sender,
+      :oml_sender_id,
+      :oml_seq,
+      :oml_ts_client,
+      :oml_ts_server
+    ]
 
     def self.create(schema_description)
       if schema_description.kind_of? self
@@ -110,8 +119,9 @@ module OMF::OML
       
       # should normalize type
       if type = col[:type]
+        tn = type.to_s.split('(')[0] # take care of types like varargs(..)
         unless type = ANY2TYPE[type.to_s.downcase]
-          warn "Unknown type definition '#{col[:type]}', default to 'string'"
+          warn "Unknown type definition '#{tn}', default to 'string'"
           type = :string
         end
       else
@@ -151,7 +161,7 @@ module OMF::OML
     # hrow - Hash describing a row
     # set_nil_when_missing - If true, set any columns not described in hrow to nil
     #
-    def hash_to_row(hrow, set_nil_when_missing = false, call_type_conversion = true)
+    def hash_to_row(hrow, set_nil_when_missing = false, call_type_conversion = false)
       #puts "HASH2A => #{hrow.inspect}"
       remove_first_col = false
       r = @schema.collect do |cdescr|
@@ -194,10 +204,20 @@ module OMF::OML
       describe.to_json(*opt)
     end
     
-    def clone()
+    def clone(exclude_oml_internals = false)
       c = self.dup
-      c.instance_variable_set('@schema', @schema.clone)
+      schema = @schema.clone
+      if exclude_oml_internals
+        schema = schema.select do |cd|
+          not OML_INTERNALS.include?(cd[:name])
+        end
+      end
+      c.instance_variable_set('@schema', schema)
       c
+    end
+    
+    def to_s
+      "OmlSchema: #{@schema.map {|c| "#{c[:name]}:#{c[:type]}"}.join(', ')}"
     end
     
     protected

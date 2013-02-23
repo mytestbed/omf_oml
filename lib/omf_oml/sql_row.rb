@@ -23,6 +23,7 @@ module OMF::OML
     #   - offset: Ignore first +offset+ rows. If negative or zero serve +offset+ rows initially
     #   - limit: Number of rows to fetch each time [1000]
     #   - check_interval: Interval in seconds when to check for new data. If 0, only run once.
+    #   - query_interval: Interval between consecutive queries when processing large result set.
     #
     def initialize(table_name, schema_raw, db_opts, source, opts = {})
       @sname = table_name
@@ -37,8 +38,8 @@ module OMF::OML
       
       @check_interval = opts[:check_interval]
       @check_interval = 0 unless @check_interval
+      @query_interval = opts[:query_interval]
       
-
       @on_new_vector_proc = {}
 
       schema = parse_schema(schema_raw)
@@ -60,10 +61,11 @@ module OMF::OML
       end
     end
     
-    # Return the elements of the vector as an array
-    def to_a(include_oml_internals = false)
-      a = @schema.hash_to_row(@row, false, false) # don't need type conversion as sequel is doing this for us
-      include_oml_internals ? a : a[4 .. -1]
+    # Return the elements of the row as an array using the 
+    # associated schema or 'schema' if non-nil.
+    #
+    def to_a(schema = nil)
+      a = (schema || @schema).hash_to_row(@row) # don't need type conversion as sequel is doing this for us
     end
     
     # Return an array including the values for the names elements
@@ -168,10 +170,13 @@ module OMF::OML
       unless name
         name = @sname
       end
-      t = OMF::OML::OmlTable.new(name, self.schema)
-      include_oml_internals = opts[:include_oml_internals] || true
+      include_oml_internals = opts[:include_oml_internals]
+      include_oml_internals = true if include_oml_internals.nil?
+      schema = self.schema.clone(!include_oml_internals)
+      t = OMF::OML::OmlTable.new(name, schema, opts)
       self.on_new_tuple() do |v|
-        r = v.to_a(include_oml_internals)
+        r = v.to_a(schema)
+        #puts r.inspect
         t.add_row(r)   
       end
       t
@@ -227,7 +232,7 @@ module OMF::OML
       @db = Sequel.connect(@db_opts)
       
       if @check_interval <= 0
-        _run_once
+        while _run_once; end
       else
         @running = true
         while (@running)
@@ -265,8 +270,11 @@ module OMF::OML
         row_cnt += 1
       end
       @offset += row_cnt
-      debug "Read #{row_cnt}/#{@offset} rows from '#{@sname}'" if row_cnt > 0
-      row_cnt >= @limit # there could be more to read     
+      debug "Read #{row_cnt} (total #{@offset}) rows from '#{@sname}'" if row_cnt > 0
+      if more_to_read = row_cnt >= @limit # there could be more to read
+        sleep @query_interval if @query_interval # don't hammer database
+      end 
+      more_to_read    
     end
     
     # def _statement
