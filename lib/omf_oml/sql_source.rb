@@ -53,7 +53,12 @@ module OMF::OML
     #
     def create_table(table_name, opts)
       tn = opts.delete(:name) || table_name
-      r = OmlSqlRow.new(table_name, @db.schema(table_name), @db_opts, self, opts)
+      begin
+        db_schema = @db.schema(tn)
+      rescue Sequel::Error => ex
+        raise "Problems reading schema of table '#{tn}'. Does it exist?"
+      end
+      r = OmlSqlRow.new(table_name, db_schema, @db_opts, self, opts)
       r.to_table(tn, opts)
     end
 
