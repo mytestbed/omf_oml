@@ -110,6 +110,10 @@ module OMF::OML
       end
     end
     
+    def <<(row)
+      add_row(row)
+    end
+    
     # Return a new table which shadows this table but only contains
     # rows with unique values in the column 'col_name' and of these the 
     # latest added rows to this table.
@@ -164,6 +168,12 @@ module OMF::OML
       st
     end
     
+    # Return table as an array of rows
+    #
+    def to_a
+      @rows.dup
+    end
+    
     def describe()
       rows
     end
@@ -177,6 +187,7 @@ module OMF::OML
     # NOT synchronized
     #
     def _add_row(row, needs_casting = false)
+      throw "Expected array, but got '#{row}'" unless row.is_a?(Array)
       if needs_casting
         row = @schema.cast_row(row, true)
       end
@@ -190,8 +201,8 @@ module OMF::OML
       _add_row_finally(row)
     end
     
-    # Finally add 'row' to internal storage. This would be hte method to
-    # overide in sub classes as this is thread safe and all other pre-storage
+    # Finally add 'row' to internal storage. This would be the method to
+    # override in sub classes as this is thread safe and all other pre-storage
     # test have been performed. Should return the row added, or nil if nothing
     # was ultimately added.
     #

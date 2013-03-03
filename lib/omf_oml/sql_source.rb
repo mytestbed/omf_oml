@@ -61,6 +61,19 @@ module OMF::OML
       r = OmlSqlRow.new(table_name, db_schema, @db_opts, self, opts)
       r.to_table(tn, opts)
     end
+    
+    #
+    # Run a query on the database and return the result as an OmlTable. The provided schema 
+    # needs to describe the SQL queries result set. Unfortunately we can only do very little
+    # sanity checks here
+    #
+    def query(sql, table_name, schema)
+      tbl = OmlTable.create(table_name, schema)
+      @db.fetch(sql).each do |row|
+        tbl << schema.hash_to_row(row)
+      end
+      tbl
+    end
 
     # Start checking the database for tables and create a new stream
     # by calling the internal +report_new_table+ method.
