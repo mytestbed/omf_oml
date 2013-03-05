@@ -53,14 +53,7 @@ module OMF::OML
     #
     def create_table(table_name, opts)
       tn = opts.delete(:name) || table_name
-      begin
-        schema_descr = @db.schema(table_name).map do |col_name, cd|
-          {name: col_name, type: cd[:type]}
-        end
-        schema = OmlSchema.new(schema_descr)
-      rescue Sequel::Error => ex
-        raise "Problems reading schema of table '#{table_name}'. Does it exist? (#{@db.tables})"
-      end
+      schema = _schema_for_table(table_name)
       r = OmlSqlRow.new(table_name, schema, @db, opts)
       r.to_table(tn, opts)
     end
@@ -131,7 +124,9 @@ module OMF::OML
     def report_new_table(table_name)
       unless table =  @tables[table_name] # check if already reported before
         debug "Found table: #{table_name}"
-        table = @tables[table_name] = OmlSqlRow.new(table_name, @db.schema(table_name), @db_opts, self, @row_opts)
+        schema = _schema_for_table(table_name)
+        table = @tables[table_name] = OmlSqlRow.new(table_name, schema, @db, @row_opts)
+        #table = @tables[table_name] = OmlSqlRow.new(table_name, @db.schema(table_name), @db_opts, self, @row_opts)
         @on_new_stream_procs.each_value do |proc|
           proc.call(table)
         end
@@ -139,6 +134,16 @@ module OMF::OML
       table
     end
     
+    def _schema_for_table(table_name)
+      begin
+        schema_descr = @db.schema(table_name).map do |col_name, cd|
+          {name: col_name, type: cd[:type]}
+        end
+        schema = OmlSchema.new(schema_descr)
+      rescue Sequel::Error => ex
+        raise "Problems reading schema of table '#{table_name}'. Does it exist? (#{@db.tables})"
+      end
+    end
   end
   
 
