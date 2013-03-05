@@ -1,5 +1,6 @@
 
 require 'omf_oml/tuple'
+require 'omf_oml/table'
 
 module OMF::OML
         
@@ -15,20 +16,20 @@ module OMF::OML
     # 
     # Create a representation of a row in a database. Can be used to fill a table.
     #
-    # table_name - name table in respective SQL database
-    # schema_raw - a hash returned by the sequel library's #schema method
-    # db_opts - Enough information to open a Sequel database adapter
-    # source - Reference to the SqlSource which created this instance
-    # opts:  
+    # @param [String] sql_table_name - name of SQL table in respective SQL database
+    # @param [OmlSchema] schema - the schema describing the tuple
+    # @param [Sequel] db - Database 
+    # @param [Hash] opts:  
     #   - offset: Ignore first +offset+ rows. If negative or zero serve +offset+ rows initially
     #   - limit: Number of rows to fetch each time [1000]
     #   - check_interval: Interval in seconds when to check for new data. If 0, only run once.
     #   - query_interval: Interval between consecutive queries when processing large result set.
     #
-    def initialize(table_name, schema_raw, db_opts, source, opts = {})
-      @sname = table_name
-      @db_opts = db_opts
-      @source = source
+    def initialize(sql_table_name, schema, db, opts = {})
+      @sname = sql_table_name
+      @schema = schema
+      raise "Expected OmlSchema but got '#{schema.class}" unless schema.is_a? OmlSchema
+      @db = db
       
       unless @offset = opts[:offset]
         @offset = 0
@@ -42,8 +43,7 @@ module OMF::OML
       
       @on_new_vector_proc = {}
 
-      schema = parse_schema(schema_raw)
-      super table_name, schema 
+      super opts[:name] || sql_table_name, schema 
     end
     
     
@@ -185,30 +185,30 @@ module OMF::OML
 
     protected
         
-    def parse_schema(raw)
-      #puts ">> PARSE SCHEMA"
-      sd = raw.collect do |col| 
-        name, opts = col
-        #puts col.inspect
-        {:name => name, :type => opts[:db_type]}
-      end
-      # Query we are using is adding the 'oml_sender_name' to the front of the table
-      sd.insert(0, :name => :oml_sender, :type => :string)
-      OmlSchema.new(sd)
-    end
-    
-    # override
-    def process_schema(schema)
-      # i = 0
-      # @vprocs = {}
-      # schema.each_column do |col|
-        # name = col[:name]
-        # j = i + 0
-        # l = @vprocs[name] = lambda do |r| r[j] end
-        # @vprocs[i - 4] = l if i > 4
-        # i += 1
+    # def parse_schema(raw)
+      # #puts ">> PARSE SCHEMA"
+      # sd = raw.collect do |col| 
+        # name, opts = col
+        # #puts col.inspect
+        # {:name => name, :type => opts[:db_type]}
       # end
-    end
+      # # Query we are using is adding the 'oml_sender_name' to the front of the table
+      # sd.insert(0, :name => :oml_sender, :type => :string)
+      # OmlSchema.new(sd)
+    # end
+#     
+    # # override
+    # def process_schema(schema)
+      # # i = 0
+      # # @vprocs = {}
+      # # schema.each_column do |col|
+        # # name = col[:name]
+        # # j = i + 0
+        # # l = @vprocs[name] = lambda do |r| r[j] end
+        # # @vprocs[i - 4] = l if i > 4
+        # # i += 1
+      # # end
+    # end
     
     def run(in_thread = true)
       return if @running
@@ -229,8 +229,6 @@ module OMF::OML
     private
     
     def _run
-      @db = Sequel.connect(@db_opts)
-      
       if @check_interval <= 0
         while _run_once; end
       else
