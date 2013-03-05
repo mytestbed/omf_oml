@@ -45,7 +45,7 @@ module OMF::OML
     # Return a table (more precisely an OmlTable instance) fed from 
     # the content of a table 'table_name' in this database.
     #
-    # table_name - Name of table in this database
+    # table_name - Name of table in the SQL database
     # opts - 
     #   :include_oml_internals - Include OML 'header' columns [true]
     #   :name - name used for returned OML Table [table_name]
