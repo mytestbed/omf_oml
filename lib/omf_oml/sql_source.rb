@@ -15,6 +15,14 @@ module OMF::OML
   # start producing the streams.
   #
   class OmlSqlSource < OMF::Common::LObject
+    
+    # Sequel adaptors sometimes don't return a :type identifier,
+    # but always return the :db_type. This is a list of maps which may not work
+    # for all adaptors
+    # 
+    FALLBACK_MAPPING = {
+      'UNSIGNED INTEGER' => :integer
+    }
 
     # db_opts - Options used to create a Sequel adapter
     #
@@ -137,8 +145,12 @@ module OMF::OML
     def _schema_for_table(table_name)
       begin
         schema_descr = @db.schema(table_name).map do |col_name, cd|
-          {name: col_name, type: cd[:type]}
+          unless type = cd[:type] || FALLBACK_MAPPING[cd[:db_type]]
+            warn "Can't find ruby type for database type '#{cd[:db_type]}'"
+          end
+          {name: col_name, type: type}
         end
+        #puts "SCHEMA_DESCR>>>> #{schema_descr}"
         schema = OmlSchema.new(schema_descr)
       rescue Sequel::Error => ex
         raise "Problems reading schema of table '#{table_name}'. Does it exist? (#{@db.tables})"

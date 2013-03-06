@@ -120,60 +120,73 @@ module OMF::OML
     #   :name   - name to use for table
     #   ....    - remaining options to be passed to table constructur
     #
-    def capture_in_table(*args, &block)
-      if args.length == 1
-        if args[0].kind_of?(Array)
-          select = args[0]
-        elsif args[0].kind_of?(Hash)
-          opts = args[0]
-        end
-      elsif args.length == 2 && args[1].kind_of?(Hash)
-        select = args[0]
-        opts = args[1]
-      else
-        opts = {}
-        select = args
-      end
-      
-      if (tschema = opts.delete(:schema))
-        # unless tschema[0].kind_of? Hash
-          # tschema = tschema.collect do |cname| {:name => cname} end
-        # end 
-      else
-        tschema = select.collect do |cname| {:name => cname} end
-      end
-      tname = opts.delete(:name) || stream_name
-      t = OMF::OML::OmlTable.new(tname, tschema, opts)
-      if block
-        self.on_new_tuple() do |v|
-          #puts "New vector(#{tname}): #{v.schema.inspect} ---- #{v.select(*select).size} <#{v.select(*select).join('|')}>"
-          if select
-            row = block.call(v.select(*select))
-          else
-            row = block.call(v)
-          end             
-          if row
-            raise "Expected kind of Array, but got '#{row.inspect}'" unless row.kind_of?(Array)
-            t.add_row(row)
-          end  
-        end
-      else
-        self.on_new_tuple() do |v|
-          #puts "New vector(#{tname}): #{v.select(*select).join('|')}"
-          t.add_row(v.select(*select))   
-        end
-      end
-      t
-    end
+    # def capture_in_table(*args, &block)
+      # if args.length == 1
+        # if args[0].kind_of?(Array)
+          # select = args[0]
+        # elsif args[0].kind_of?(Hash)
+          # opts = args[0]
+        # end
+      # elsif args.length == 2 && args[1].kind_of?(Hash)
+        # select = args[0]
+        # opts = args[1]
+      # else
+        # opts = {}
+        # select = args
+      # end
+#       
+      # if (tschema = opts.delete(:schema))
+        # # unless tschema[0].kind_of? Hash
+          # # tschema = tschema.collect do |cname| {:name => cname} end
+        # # end 
+      # else
+        # tschema = select.collect do |cname| {:name => cname} end
+      # end
+      # tname = opts.delete(:name) || stream_name
+      # t = OMF::OML::OmlTable.new(tname, tschema, opts)
+      # if block
+        # self.on_new_tuple() do |v|
+          # #puts "New vector(#{tname}): #{v.schema.inspect} ---- #{v.select(*select).size} <#{v.select(*select).join('|')}>"
+          # if select
+            # row = block.call(v.select(*select))
+          # else
+            # row = block.call(v)
+          # end             
+          # if row
+            # raise "Expected kind of Array, but got '#{row.inspect}'" unless row.kind_of?(Array)
+            # t.add_row(row)
+          # end  
+        # end
+      # else
+        # self.on_new_tuple() do |v|
+          # #puts "New vector(#{tname}): #{v.select(*select).join('|')}"
+          # t.add_row(v.select(*select))   
+        # end
+      # end
+      # t
+    # end
     
+    
+    # Return a table which will capture the content of this tuple stream.
+    #
+    # @param [string] name - Name to use for returned table
+    # @param [Hash] opts Options to be passed on to Table constructor
+    # @opts [boolean] opts :include_oml_internals If true will also include OML header columns
+    # @opts [OmlSchema] opts :schema use specific schema for table (Needs to be a subset of the tuples schema)
     def to_table(name = nil, opts = {})
       unless name
         name = @sname
       end
-      include_oml_internals = opts[:include_oml_internals]
-      include_oml_internals = true if include_oml_internals.nil?
-      schema = self.schema.clone(!include_oml_internals)
+      unless schema = opts.delete(:schema)
+        include_oml_internals = (opts[:include_oml_internals] != false)
+        schema = self.schema.clone(!include_oml_internals)
+        if include_oml_internals
+          # replace sender_id by sender ... see _run_once
+          schema.replace_column_at 0, :oml_sender
+        end
+      end
       t = OMF::OML::OmlTable.new(name, schema, opts)
+      #puts ">>>>SCHEMA>>> #{schema.inspect}"
       self.on_new_tuple() do |v|
         r = v.to_a(schema)
         #puts r.inspect
@@ -260,7 +273,7 @@ module OMF::OML
       end
       @db["SELECT _senders.name as oml_sender, #{t}.* FROM #{t} INNER JOIN _senders ON (_senders.id = #{t}.oml_sender_id) LIMIT #{@limit} OFFSET #{@offset};"].each do |r|
       #@db["SELECT _senders.name as oml_sender, #{t}.* FROM #{t} JOIN _senders WHERE #{t}.oml_sender_id = _senders.id LIMIT #{@limit} OFFSET #{@offset};"].each do |r|
-        #puts "ROW>>> #{r.inspect}"
+        #puts "ROW #{t}>>> #{r.inspect}"
         @row = r
         @on_new_vector_proc.each_value do |proc|
           proc.call(self)

@@ -92,63 +92,13 @@ module OMF::OML
     end
     
     def insert_column_at(index, col)
-      if col.kind_of?(Symbol) || col.kind_of?(String)
-        col = [col]
-      end
-      if col.kind_of? Array
-        # should be [name, type]
-        if col.length == 1
-          col = {:name => col[0].to_sym, 
-                  :type => :string, 
-                  :title => col[0].to_s.split('_').collect {|s| s.capitalize}.join(' ')}
-        elsif col.length == 2
-          col = {:name => col[0].to_sym,
-                  :type => col[1].to_sym, 
-                  :title => col[0].to_s.split('_').collect {|s| s.capitalize}.join(' ')}
-        elsif col.length == 3
-          col = {:name => col[0].to_sym, :type => col[1].to_sym, :title => col[2]}
-        else
-          throw "Simple column schema should consist of [name, type, title] array, but found '#{col.inspect}'"
-        end
-      elsif col.kind_of? Hash
-        # ensure there is a :title property
-        unless col[:title]
-          col[:title] = col[:name].to_s.split('_').collect {|s| s.capitalize}.join(' ')
-        end
-      end
-      
-      # should normalize type
-      if type = col[:type]
-        tn = type.to_s.split('(')[0] # take care of types like varargs(..)
-        unless type = ANY2TYPE[type.to_s.downcase]
-          warn "Unknown type definition '#{tn}', default to 'string'"
-          type = :string
-        end
-      else
-        warn "Missing type definition in '#{col[:name]}', default to 'string' (#{col.inspect})"          
-        type = :string
-      end
-      col[:type] = type
-      
-      col[:type_conversion] = case type
-        when :string
-          lambda do |r| r end
-        when :key
-          lambda do |r| r end
-        when :integer 
-          lambda do |r| r.to_i end
-        when :float 
-          lambda do |r| r.to_f end
-        when :date 
-          lambda do |r| Date.parse(r) end
-        when :dateTime
-          lambda do |r| Time.parse(r) end
-        else raise "Unrecognized Schema type '#{type}'"
-      end
-                  
-      @schema.insert(index, col)
+      @schema.insert(index, _create_col_descr(col))       
     end
     
+    def replace_column_at(index, col)
+      @schema[index] = _create_col_descr(col)
+    end
+
     def each_column(&block)
       @schema.each do |c| 
         block.call(c) 
@@ -233,6 +183,65 @@ module OMF::OML
       end
       debug "schema: '#{describe.inspect}'"
       
+    end
+    
+    # Create a column descriptor from whatever is given by user
+    #
+    def _create_col_descr(col)
+      if col.kind_of?(Symbol) || col.kind_of?(String)
+        col = [col]
+      end
+      if col.kind_of? Array
+        # should be [name, type]
+        if col.length == 1
+          col = {:name => col[0].to_sym, 
+                  :type => :string, 
+                  :title => col[0].to_s.split('_').collect {|s| s.capitalize}.join(' ')}
+        elsif col.length == 2
+          col = {:name => col[0].to_sym,
+                  :type => col[1].to_sym, 
+                  :title => col[0].to_s.split('_').collect {|s| s.capitalize}.join(' ')}
+        elsif col.length == 3
+          col = {:name => col[0].to_sym, :type => col[1].to_sym, :title => col[2]}
+        else
+          throw "Simple column schema should consist of [name, type, title] array, but found '#{col.inspect}'"
+        end
+      elsif col.kind_of? Hash
+        # ensure there is a :title property
+        unless col[:title]
+          col[:title] = col[:name].to_s.split('_').collect {|s| s.capitalize}.join(' ')
+        end
+      end
+      
+      # should normalize type
+      if type = col[:type]
+        tn = type.to_s.split('(')[0] # take care of types like varargs(..)
+        unless type = ANY2TYPE[type.to_s.downcase]
+          warn "Unknown type definition '#{tn}', default to 'string'"
+          type = :string
+        end
+      else
+        warn "Missing type definition in '#{col[:name]}', default to 'string' (#{col.inspect})"          
+        type = :string
+      end
+      col[:type] = type
+      
+      col[:type_conversion] = case type
+        when :string
+          lambda do |r| r end
+        when :key
+          lambda do |r| r end
+        when :integer 
+          lambda do |r| r.to_i end
+        when :float 
+          lambda do |r| r.to_f end
+        when :date 
+          lambda do |r| Date.parse(r) end
+        when :dateTime
+          lambda do |r| Time.parse(r) end
+        else raise "Unrecognized Schema type '#{type}'"
+      end
+      col
     end
   end # OmlSchema
   
