@@ -101,78 +101,37 @@ module OMF::OML
       run() unless @on_new_vector_proc.empty?
     end
 
-    # Create and return an +OmlTable+ which captures this tuple stream
-    #
-    # The argument to this method are either a list of columns to 
-    # to capture in the table, or an array of column names and
-    # an option hash  or just 
-    # the option hash to be provided to the +OmlTable+ constructor.
-    #
-    # If a block is provided, any arriving tuple is executed by the block
-    # which is expected to return an array which is added to the table
-    # or nil in which case nothing is added. If a selector array is given the 
-    # block is called with an array of values in the order of the columns
-    # listed in the selector. Otherwise, the block is called directly 
-    # with the tuple.
-    #
-    # opts:
-    #   :schema - use this schema instead for the table
-    #   :name   - name to use for table
-    #   ....    - remaining options to be passed to table constructur
-    #
-    # def capture_in_table(*args, &block)
-      # if args.length == 1
-        # if args[0].kind_of?(Array)
-          # select = args[0]
-        # elsif args[0].kind_of?(Hash)
-          # opts = args[0]
-        # end
-      # elsif args.length == 2 && args[1].kind_of?(Hash)
-        # select = args[0]
-        # opts = args[1]
-      # else
-        # opts = {}
-        # select = args
-      # end
-#       
-      # if (tschema = opts.delete(:schema))
-        # # unless tschema[0].kind_of? Hash
-          # # tschema = tschema.collect do |cname| {:name => cname} end
-        # # end 
-      # else
-        # tschema = select.collect do |cname| {:name => cname} end
-      # end
-      # tname = opts.delete(:name) || stream_name
-      # t = OMF::OML::OmlTable.new(tname, tschema, opts)
-      # if block
-        # self.on_new_tuple() do |v|
-          # #puts "New vector(#{tname}): #{v.schema.inspect} ---- #{v.select(*select).size} <#{v.select(*select).join('|')}>"
-          # if select
-            # row = block.call(v.select(*select))
-          # else
-            # row = block.call(v)
-          # end             
-          # if row
-            # raise "Expected kind of Array, but got '#{row.inspect}'" unless row.kind_of?(Array)
-            # t.add_row(row)
-          # end  
-        # end
-      # else
-        # self.on_new_tuple() do |v|
-          # #puts "New vector(#{tname}): #{v.select(*select).join('|')}"
-          # t.add_row(v.select(*select))   
-        # end
-      # end
-      # t
-    # end
-    
-    
     # Return a table which will capture the content of this tuple stream.
     #
     # @param [string] name - Name to use for returned table
     # @param [Hash] opts Options to be passed on to Table constructor
     # @opts [boolean] opts :include_oml_internals If true will also include OML header columns
     # @opts [OmlSchema] opts :schema use specific schema for table (Needs to be a subset of the tuples schema)
+    #
+    def to_stream(opts = {}, &block)
+      unless schema = opts.delete(:schema)
+        include_oml_internals = (opts[:include_oml_internals] != false)
+        schema = self.schema.clone(!include_oml_internals)
+        if include_oml_internals
+          # replace sender_id by sender ... see _run_once
+          schema.replace_column_at 0, :oml_sender
+        end
+      end
+      self.on_new_tuple(rand()) do |t|
+        #v = t.to_a(schema)
+        v = t.row
+        block.arity == 1 ? block.call(v) : block.call(v, schema)
+      end
+      schema
+    end
+
+    # Return a table which will capture the content of this tuple stream.
+    #
+    # @param [string] name - Name to use for returned table
+    # @param [Hash] opts Options to be passed on to Table constructor
+    # @opts [boolean] opts :include_oml_internals If true will also include OML header columns
+    # @opts [OmlSchema] opts :schema use specific schema for table (Needs to be a subset of the tuples schema)
+    #
     def to_table(name = nil, opts = {})
       unless name
         name = @sname
@@ -187,7 +146,7 @@ module OMF::OML
       end
       t = OMF::OML::OmlTable.new(name, schema, opts)
       #puts ">>>>SCHEMA>>> #{schema.inspect}"
-      self.on_new_tuple() do |v|
+      self.on_new_tuple(t) do |v|
         r = v.to_a(schema)
         #puts r.inspect
         t.add_row(r)   
@@ -197,31 +156,6 @@ module OMF::OML
 
 
     protected
-        
-    # def parse_schema(raw)
-      # #puts ">> PARSE SCHEMA"
-      # sd = raw.collect do |col| 
-        # name, opts = col
-        # #puts col.inspect
-        # {:name => name, :type => opts[:db_type]}
-      # end
-      # # Query we are using is adding the 'oml_sender_name' to the front of the table
-      # sd.insert(0, :name => :oml_sender, :type => :string)
-      # OmlSchema.new(sd)
-    # end
-#     
-    # # override
-    # def process_schema(schema)
-      # # i = 0
-      # # @vprocs = {}
-      # # schema.each_column do |col|
-        # # name = col[:name]
-        # # j = i + 0
-        # # l = @vprocs[name] = lambda do |r| r[j] end
-        # # @vprocs[i - 4] = l if i > 4
-        # # i += 1
-      # # end
-    # end
     
     def run(in_thread = true)
       return if @running
@@ -272,8 +206,6 @@ module OMF::OML
         @offset = 0 if @offset < 0
       end
       @db["SELECT _senders.name as oml_sender, #{t}.* FROM #{t} INNER JOIN _senders ON (_senders.id = #{t}.oml_sender_id) LIMIT #{@limit} OFFSET #{@offset};"].each do |r|
-      #@db["SELECT _senders.name as oml_sender, #{t}.* FROM #{t} JOIN _senders WHERE #{t}.oml_sender_id = _senders.id LIMIT #{@limit} OFFSET #{@offset};"].each do |r|
-        #puts "ROW #{t}>>> #{r.inspect}"
         @row = r
         @on_new_vector_proc.each_value do |proc|
           proc.call(self)
@@ -288,23 +220,6 @@ module OMF::OML
       more_to_read    
     end
     
-    # def _statement
-      # unless @stmt
-        # db = @db = SQLite3::Database.new(@db_file)
-        # @db.type_translation = true   
-        # table_name = t = @sname  
-        # if @offset < 0
-          # cnt = db.execute("select count(*) from #{table_name};")[0][0].to_i
-          # #debug "CNT: #{cnt}.#{cnt.class} offset: #{@offset}"
-          # @offset = cnt + @offset # @offset was negative here
-          # debug("Initial offset #{@offset} in '#{table_name}' with #{cnt} rows")
-          # @offset = 0 if @offset < 0
-        # end
-        # #@stmt = db.prepare("SELECT * FROM #{table_name} LIMIT ? OFFSET ?;")
-        # @stmt = db.prepare("SELECT _senders.name, #{t}.* FROM #{t} JOIN _senders WHERE #{t}.oml_sender_id = _senders.id LIMIT ? OFFSET ?;")
-      # end
-      # @stmt
-    # end
   end # OmlSqlRow
 
 

@@ -43,7 +43,9 @@ module OMF::OML
       #@endpoint = endpoint
       @name = tname
       @schema = OmlSchema.create(schema)
+      @add_index = false
       unless @schema.name_at(0) == :__id__
+        @add_index = true
         @schema.insert_column_at(0, [:__id__, 'int'])
       end
       @opts = opts
@@ -97,6 +99,14 @@ module OMF::OML
         end
       else
         @on_content_changed.delete key
+      end
+    end
+    
+    def on_row_added(key, &block)
+      on_content_changed(key) do |action, rows|
+        if action == :added
+          rows.each {|r| block.call(r)}
+        end
       end
     end
     
@@ -197,7 +207,7 @@ module OMF::OML
       end
       return nil unless row 
 
-      row.insert(0, @row_id += 1)
+      row.insert(0, @row_id += 1) if @add_index
       _add_row_finally(row)
     end
     

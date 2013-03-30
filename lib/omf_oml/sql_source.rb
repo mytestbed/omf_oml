@@ -8,7 +8,7 @@ require 'omf_oml/sql_row'
 
 module OMF::OML
 
-  # This class fetches the content of an sqlite3 database and serves it as multiple
+  # This class fetches the content of an SQL database and serves it as multiple
   # OML streams.
   #
   # After creating the object, the @run@ method needs to be called to
@@ -59,13 +59,30 @@ module OMF::OML
     #   :name - name used for returned OML Table [table_name]
     #   All other options defined for OmlSqlRow#new
     #
-    def create_table(table_name, opts)
+    def create_table(table_name, opts = {})
       tn = opts.delete(:name) || table_name
       schema = _schema_for_table(table_name)
       r = OmlSqlRow.new(table_name, schema, @db, opts)
       r.to_table(tn, opts)
     end
     
+    # Call 'block' for every row in 'table_name' table.
+    #
+    # table_name - Name of table in the SQL database
+    # opts - 
+    #   :include_oml_internals[boolean] - Include OML 'header' columns [true]
+    #   :schema[Schema] Schema to use for creating row
+    #   All other options defined for OmlSqlRow#new
+    #
+    def create_stream(table_name, opts = {}, &block)
+      rschema = opts.delete(:schema)
+      schema = _schema_for_table(table_name)
+      r = OmlSqlRow.new(table_name, schema, @db, opts)
+      ropts = {}
+      ropts[:schema] = rschema if rschema
+      r.to_stream(ropts, &block)
+    end
+
     #
     # Run a query on the database and return the result as an OmlTable. The provided schema 
     # needs to describe the SQL queries result set. Unfortunately we can only do very little
@@ -83,7 +100,6 @@ module OMF::OML
     # by calling the internal +report_new_table+ method.
     # If +check_every+ > 0 continue checking every +check_every+ seconds
     # for new tables in the database, otherwise it's only checked once
-    #
     #
     def run(check_every = -1)
       if check_every <= 0
@@ -104,6 +120,8 @@ module OMF::OML
       end
     end
 
+    protected
+
     def run_once()
       debug "Finding tables #{@db.tables}"
       # first find tables
@@ -120,7 +138,6 @@ module OMF::OML
     end
 
 
-    protected
 
     # THis method is being called for every table detected in the database.
     # It creates a new +OmlSqlRow+ object with +opts+ as the only argument.
