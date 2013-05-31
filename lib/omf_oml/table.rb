@@ -8,28 +8,28 @@ require 'omf_oml/schema'
 
 
 module OMF::OML
-          
+
   # This class represents a database like table holding a sequence of OML measurements (rows) according
   # a common schema.
   #
   class OmlTable < OMF::Common::LObject
-    
+
     def self.create(tname, schema, opts = {}, &on_before_row_added)
       if (index = opts.delete(:index))
         require 'omf_oml/indexed_table'
-        OmlIndexedTable.new(tname, index, schema, &on_before_row_added)        
+        OmlIndexedTable.new(tname, index, schema, &on_before_row_added)
       else
         OmlTable.new(tname, schema, opts, &on_before_row_added)
       end
     end
     include MonitorMixin
-    
+
     attr_reader :name
     attr_accessor :max_size
     attr_reader :schema
     attr_reader :offset
-    
-    # 
+
+    #
     # tname - Name of table
     # schema - OmlSchema or Array containing [name, type*] for every column in table
     #   Table adds a '__id__' column at the beginning which keeps track of the rows unique id
@@ -39,7 +39,6 @@ module OMF::OML
     #
     def initialize(tname, schema, opts = {}, &on_before_row_added)
       super tname
-      
       #@endpoint = endpoint
       @name = tname
       @schema = OmlSchema.create(schema)
@@ -61,12 +60,12 @@ module OMF::OML
       @max_size = opts[:max_size]
       @on_content_changed = {}
     end
-    
+
     def rows
       #@indexed_rows ? @indexed_rows.values : @rows
       @rows
     end
-    
+
     # Register +callback+ to be called to process any newly
     # offered row before it being added to internal storage.
     # The callback's argument is the new row (TODO: in what form)
@@ -76,12 +75,12 @@ module OMF::OML
     def on_before_row_added(&callback)
       @on_before_row_added = callback
     end
-    
+
     # Register callback for when the content of the table is changes. The key
     # allows for the callback to be removed by calling this method
-    # without a block. . If the 
+    # without a block. . If the
     # optional 'offset' value is set to zero or a positive value,
-    # then the currently stored values starting at this index are being 
+    # then the currently stored values starting at this index are being
     # immediately sent to 'proc'. The 'proc' is expected to receive two
     # parameters, an 'action' and the content changed. The 'action' is either
     # ':added', or ':removed' and the content is an array of rows.
@@ -101,7 +100,7 @@ module OMF::OML
         @on_content_changed.delete key
       end
     end
-    
+
     def on_row_added(key, &block)
       on_content_changed(key) do |action, rows|
         if action == :added
@@ -109,8 +108,8 @@ module OMF::OML
         end
       end
     end
-    
-    # NOTE: +on_row_added+ callbacks are done within the monitor. 
+
+    # NOTE: +on_row_added+ callbacks are done within the monitor.
     #
     def add_row(row, needs_casting = false)
       synchronize do
@@ -119,13 +118,13 @@ module OMF::OML
         end
       end
     end
-    
+
     def <<(row)
       add_row(row)
     end
-    
+
     # Return a new table which shadows this table but only contains
-    # rows with unique values in the column 'col_name' and of these the 
+    # rows with unique values in the column 'col_name' and of these the
     # latest added rows to this table.
     #
     # col_name - Name of column to use for indexing
@@ -134,7 +133,7 @@ module OMF::OML
       require 'omf_oml/indexed_table'
       OmlIndexedTable.shadow(self, col_name)
     end
-    
+
     # Add an array of rows to this table
     #
     def add_rows(rows, needs_casting = false)
@@ -146,7 +145,7 @@ module OMF::OML
         end
       end
     end
-    
+
     # Return a new table which only contains the rows of this
     # table whose value in column 'col_name' is equal to 'col_value'
     #
@@ -177,23 +176,23 @@ module OMF::OML
       debug "Created sliced table from '#{@name}' (rows: #{st.rows.length}-#{@rows.length})"
       st
     end
-    
+
     # Return table as an array of rows
     #
     def to_a
       @rows.dup
     end
-    
+
     def describe()
       rows
     end
-    
+
     def data_sources
       self
     end
-    
+
     private
-    
+
     # NOT synchronized
     #
     def _add_row(row, needs_casting = false)
@@ -205,12 +204,12 @@ module OMF::OML
       if @on_before_row_added
         row = @on_before_row_added.call(row)
       end
-      return nil unless row 
+      return nil unless row
 
       row.insert(0, @row_id += 1) if @add_index
       _add_row_finally(row)
     end
-    
+
     # Finally add 'row' to internal storage. This would be the method to
     # override in sub classes as this is thread safe and all other pre-storage
     # test have been performed. Should return the row added, or nil if nothing
@@ -221,7 +220,7 @@ module OMF::OML
         # @indexed_rows[row[@index_col]] = row
         # return
       # end
-      
+
       @rows << row
       if @max_size && @max_size > 0 && (s = @rows.size) > @max_size
         if (removed_row = @rows.shift) # not necessarily fool proof, but fast
@@ -231,7 +230,7 @@ module OMF::OML
       end
       row
     end
-    
+
     def _notify_content_changed(action, rows)
       @on_content_changed.each_value do |proc|
         #puts "call: #{proc.inspect}"

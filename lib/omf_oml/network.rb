@@ -7,32 +7,32 @@ require 'omf_oml'
 
 
 module OMF::OML
-  
-  class OmlNetworkAlreadyExistException < Exception; end  
+
+  class OmlNetworkAlreadyExistException < Exception; end
   class OmlNodeAlreadyExistException < Exception; end
-  class OmlLinkAlreadyExistException < Exception; end  
+  class OmlLinkAlreadyExistException < Exception; end
 
   class UnknownOmlNodeException < Exception; end
-  
-  class SameNameOnUpdateException < Exception; end  
-          
+
+  class SameNameOnUpdateException < Exception; end
+
   # This class represents a network consisting of nodes and links with their respective
   # attributes.
   #
   class OmlNetwork < OMF::Common::LObject
     include MonitorMixin
-    
+
     @@name2network = {}
-    
+
     # Return a named network
     #
     def self.[](name)
       @@name2network[name]
     end
-    
+
     attr_reader :name
 
-    # 
+    #
     # name - Name of table
     # opts -
     #
@@ -42,7 +42,7 @@ module OMF::OML
       @attributes = attributes
       @nodes = {}
       @name2node = {}
-      @links = {}   
+      @links = {}
       @name2link = {}
       @epoch = 0 # increment whenever an element is being updated
       @updateListeners = {}
@@ -53,13 +53,13 @@ module OMF::OML
           end
           @@name2network[name] = self
         end
-      end      
+      end
     end
-    
+
     def nodes()
       @nodes.values
     end
-    
+
     # Return the node named +name+. If the node doesn't exist and
     # +new_opts+ is a Hash, create a new one and return that.
     #
@@ -75,7 +75,7 @@ module OMF::OML
     def links()
       @links.values
     end
-    
+
     # Return the link named +name+. If the link doesn't exist and
     # +new_opts+ is a Hash, create a new one and return that.
     #
@@ -88,7 +88,7 @@ module OMF::OML
       link
     end
 
-  
+
     # Register a callback to be called every time network elements change
     # The callback is provided with an arrach of changed elements.
     #
@@ -102,7 +102,7 @@ module OMF::OML
         @updateListeners.delete(name)
       end
     end
-    
+
     # NOTE: May need a monitor if used in multi-threaded environments
     #
     def create_node(name = nil, attributes = {})
@@ -117,18 +117,18 @@ module OMF::OML
         node
       end
     end
-    
+
     #
     # opts
     #   :from - fromNode if +fromNode+ is nil
     #   :to - toNode if +toNode+ is nil
     #   ...  - rest of options passed on to +NetworkLink+ constructor
-    #    
+    #
     def create_link(name = nil, fromNode = nil, toNode = nil, attributes = {})
       name = name.to_sym if name
       fromNode = attributes.delete(:from) unless fromNode
       toNode = attributes.delete(:to) unless toNode
-            
+
       synchronize do
         if name && @name2link[name]
           raise OmlLinkAlreadyExistException.new(name)
@@ -145,11 +145,11 @@ module OMF::OML
         link
       end
     end
-    
+
     # To have the update listeners only called once when multiple elements are changed at once, perform the
     # changes within a +transaction+ block. The listeners are then called once with an array containing
     # all updated elements.
-    # 
+    #
     def transaction(&block)
       updated = UpdateSet.new
       synchronize do
@@ -157,7 +157,7 @@ module OMF::OML
 
         @in_transaction = true
         block.call
-        @in_transaction = true        
+        @in_transaction = true
       end
       unless updated.empty?
         @updateListeners.values.each do |l|
@@ -165,7 +165,7 @@ module OMF::OML
         end
       end
     end
-    
+
     def node_schema(schema = nil)
       if schema
         @node_schema = OmlSchema.create(schema)
@@ -174,7 +174,7 @@ module OMF::OML
       end
       @node_schema
     end
-      
+
     def link_schema(schema = nil)
       if schema
         @link_schema = OmlSchema.create(schema)
@@ -186,15 +186,15 @@ module OMF::OML
       @link_schema
     end
 
-    
+
     def describe
       nh = {}
       @nodes.each do |id, node| nh[id] = node.describe end
       lh = {}
       @links.each do |id, link| lh[id] = link.describe end
-      {:nodes => nh, :links => lh}        
+      {:nodes => nh, :links => lh}
     end
-    
+
     # Creates two tables, one capturing the link state and one for the node state.
     # Returns the two tables in a hash with keys 'nodes' and 'links'.
     #
@@ -203,12 +203,12 @@ module OMF::OML
       # @nodes.each do |id, n|
         # node_table.add_row @node_schema.hash_to_row(n.attributes)
       # end
-# 
+#
       # link_table = OmlTable.new 'links', @link_schema, table_opts
       # @links.each do |id, l|
         # link_table.add_row @link_schema.hash_to_row(l.attributes)
       # end
-#       
+#
       # on_update "__to_tables_#{node_table.object_id}" do |a|
         # a.each do |e|
           # if e.kind_of? NetworkNode
@@ -221,16 +221,17 @@ module OMF::OML
       # {:nodes => node_table, :links => link_table}
       # #{:nodes => to_table(:nodes, table_opts), :links => to_table(:links, table_opts)}
     # end
-    
-    # Create a table to track an aspect of this network. 
+
+    # Create a table to track an aspect of this network.
     #
-    # aspect - Either :nodes or :links 
+    # aspect - Either :nodes or :links
     #
     def to_table(aspect, table_opts = {})
       aspect = aspect.to_sym
       case aspect
       when :nodes
         table = OmlTable.create @name + '/nodes', @node_schema, table_opts
+        #puts "TABLE SCHEME >>>> #{table.schema}"
         table.add_rows(@nodes.map do |id, n|
           @node_schema.hash_to_row(n.attributes)
         end)
@@ -239,27 +240,34 @@ module OMF::OML
             e.kind_of?(NetworkNode) ? @node_schema.hash_to_row(e.attributes) : nil
           end.compact
           table.add_rows(nodes) unless nodes.empty?
-        end          
-        
+        end
+
       when :links
         table = OmlTable.create @name + '/links', @link_schema, table_opts
         # @links.each do |id, l|
           # table.add_row @link_schema.hash_to_row(l.attributes)
         # end
         table.add_rows(@links.map do |id, n|
+          # puts @link_schema.hash_to_row(n.attributes).inspect
+          # puts table.schema
+          # table.add_row @link_schema.hash_to_row(n.attributes)
+          # puts table.rows.inspect
+          # exit
+
           @link_schema.hash_to_row(n.attributes)
         end)
+        #puts table.rows.inspect
         on_update "__to_tables_links_#{table.object_id}" do |a|
           links = a.map do |e|
             e.kind_of?(NetworkLink) ? @link_schema.hash_to_row(e.attributes) : nil
           end.compact
           table.add_rows(links) unless links.empty?
-        end         
-        
+        end
+
       else
         raise "Unknown aspect '#{aspect}'. Should be either 'nodes' or 'links'."
       end
-      
+
       # on_update "__to_tables_#{table.object_id}" do |a|
         # a.each do |e|
           # if aspect == :nodes && e.kind_of?(NetworkNode)
@@ -270,22 +278,22 @@ module OMF::OML
           # end
         # end
       # end
-      
+
       table
     end
-    
-    
+
+
     def to_json
       describe.to_json
     end
-    
-    
-    
+
+
+
     def updated(element)
       synchronize do
         if @in_transaction
           @updated << element
-          return        
+          return
         end
       end
       uset = UpdateSet.new
@@ -296,10 +304,10 @@ module OMF::OML
     end
 
   end # OMLNetwork
-  
-  class NetworkElementAttributeException < Exception; end  
 
-  
+  class NetworkElementAttributeException < Exception; end
+
+
   # This class represents an abstract network element and shouldn't be used directly.
   #
   class NetworkElement < OMF::Common::LObject
@@ -307,7 +315,7 @@ module OMF::OML
     attr_reader :name
     attr_reader :el_id
     attr_reader :attributes
-    
+
     def initialize(name, attributes, network)
       super name
       @attributes = attributes.dup
@@ -322,15 +330,15 @@ module OMF::OML
 
       @network = network
     end
-    
+
     def [](name)
       @attributes[name]
     end
-    
+
     def []=(name, value)
       @attributes[name] = _set(value, @attributes[name])
     end
-    
+
     # Update the element's attributes. The +attributes+ argument
     # is expected to be a hash with the key identifying the attribute
     # name and the value being the new value to set that attribute to.
@@ -340,54 +348,54 @@ module OMF::OML
         self[name] = value
       end
     end
-    
+
     # Return the current state of the network element as hash
     #
     def describe
-      @attributes        
+      @attributes
     end
-    
+
     def node?
       false
     end
-    
+
     def link?
       false
     end
-    
+
     protected
-    
+
     def _set(value, old_value)
       if value != old_value
         @network.updated(self)
       end
       value
     end
-    
-  end # NetworkElement 
-  
+
+  end # NetworkElement
+
   # This class represents a network node. Should NOT be created directly, but only through
   # +OmlNetwork#create_node+ method
   #
   class NetworkNode < NetworkElement
-    
+
     def initialize(name, attributes, network)
       super
     end
-    
+
     def node?
       true
     end
-  end # NetworkNode  
+  end # NetworkNode
 
-  # This class represents a network link between two nodes. 
+  # This class represents a network link between two nodes.
   # Should NOT be created directly, but only through
   # +OmlNetwork#create_node+ method
   #
   class NetworkLink < NetworkElement
     attr_reader :from  # node
     attr_reader :to    # node
-    
+
     def initialize(name, fromNode, toNode, attributes, network)
       super name, attributes, network
       if fromNode
@@ -395,26 +403,26 @@ module OMF::OML
         #puts ">>>> NODE: #{fromNode.inspect}"
         @attributes[:from_id] = fromNode.el_id
       end
-      if toNode 
+      if toNode
         @toNode = toNode
         @attributes[:to_id] = toNode.el_id
       end
     end
-    
+
     def from=(node)
-      @attributes[:from_id] = node.el_id if node  
+      @attributes[:from_id] = node.el_id if node
       @fromNode = _set(node, @fromNode)
     end
 
     def to=(node)
-      @attributes[:to_id] = node.el_id if node        
+      @attributes[:to_id] = node.el_id if node
       @toNode = _set(node, @toNode)
     end
-    
+
     def link?
       true
     end
-  end # NetworkLink  
+  end # NetworkLink
 
   # This set may hold a set of nodes and links which have been
   # updated during a transaction. It supports the +describe+
@@ -425,16 +433,16 @@ module OMF::OML
     def describe()
       nh = {}
       lh = {}
-      
-      self.each do |el| 
+
+      self.each do |el|
         d = el.describe
         if el.kind_of? NetworkNode
           nh[el.el_id] = d
         else
           lh[el.el_id] = d
-        end 
+        end
       end
-      {:nodes => nh, :links => lh}        
+      {:nodes => nh, :links => lh}
     end
   end
 end
@@ -442,26 +450,26 @@ end
 if $0 == __FILE__
   require 'json'
   include OMF::Common::OML
-  
+
   nw = OmlNetwork.new
-  
+
   cnt = 3
-  cnt.times do |i| 
+  cnt.times do |i|
     nw.create_node "n#{i}", :x => i
   end
-  cnt.times do |i| 
+  cnt.times do |i|
     nw.create_link "l#{i}", "n#{i}", "n#{(i + 1) % cnt}", :y => i
   end
-  
+
   puts nw.describe.to_json
-  
+
   nw.on_update do |els|
     puts "UPDATED: #{els}"
   end
   nw.nodes.first[:x] = 20
-  
-  nw.transaction do 
+
+  nw.transaction do
     nw.nodes.first[:x] = 30
-    nw.links.first[:y] = 20    
+    nw.links.first[:y] = 20
   end
-end 
+end
