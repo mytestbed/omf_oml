@@ -14,6 +14,9 @@ module OMF::OML
   #
   class OmlTable < OMF::Common::LObject
 
+    # @param opts
+    # @opts :index Creates an index table (all rows have distinct values at column 'index')
+    #
     def self.create(tname, schema, opts = {}, &on_before_row_added)
       if (index = opts.delete(:index))
         require 'omf_oml/indexed_table'
