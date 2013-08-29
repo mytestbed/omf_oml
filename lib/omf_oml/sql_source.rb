@@ -1,7 +1,7 @@
 
 require 'sequel'
 
-require 'omf_common/lobject'
+require 'omf_base/lobject'
 require 'omf_oml/endpoint'
 require 'omf_oml/tuple'
 require 'omf_oml/sql_row'
@@ -14,12 +14,12 @@ module OMF::OML
   # After creating the object, the @run@ method needs to be called to
   # start producing the streams.
   #
-  class OmlSqlSource < OMF::Common::LObject
-    
+  class OmlSqlSource < OMF::Base::LObject
+
     # Sequel adaptors sometimes don't return a :type identifier,
     # but always return the :db_type. This is a list of maps which may not work
     # for all adaptors
-    # 
+    #
     FALLBACK_MAPPING = {
       'UNSIGNED INTEGER' => :integer
     }
@@ -49,42 +49,44 @@ module OMF::OML
         @on_new_stream_procs.delete key
       end
     end
-    
-    # Return a table (more precisely an OmlTable instance) fed from 
+
+    # Return a table (more precisely an OmlTable instance) fed from
     # the content of a table 'table_name' in this database.
     #
     # table_name - Name of table in the SQL database
-    # opts - 
-    #   :include_oml_internals - Include OML 'header' columns [true]
+    # opts -
     #   :name - name used for returned OML Table [table_name]
     #   All other options defined for OmlSqlRow#new
     #
     def create_table(table_name, opts = {})
       tn = opts.delete(:name) || table_name
       schema = _schema_for_table(table_name)
-      r = OmlSqlRow.new(table_name, schema, @db, opts)
+      r = OmlSqlRow.new(table_name, schema, _def_query_for_table(table_name), opts)
       r.to_table(tn, opts)
     end
-    
+
     # Call 'block' for every row in 'table_name' table.
     #
     # table_name - Name of table in the SQL database
-    # opts - 
-    #   :include_oml_internals[boolean] - Include OML 'header' columns [true]
+    # opts -
     #   :schema[Schema] Schema to use for creating row
     #   All other options defined for OmlSqlRow#new
+    # returns OmlSqlRow
     #
     def create_stream(table_name, opts = {}, &block)
       rschema = opts.delete(:schema)
       schema = _schema_for_table(table_name)
-      r = OmlSqlRow.new(table_name, schema, @db, opts)
-      ropts = {}
-      ropts[:schema] = rschema if rschema
-      r.to_stream(ropts, &block)
+      r = OmlSqlRow.new(table_name, schema, _def_query_for_table(table_name), opts)
+      if block
+        ropts = {}
+        ropts[:schema] = rschema if rschema
+        r.to_stream(ropts, &block)
+      end
+      r
     end
 
     #
-    # Run a query on the database and return the result as an OmlTable. The provided schema 
+    # Run a query on the database and return the result as an OmlTable. The provided schema
     # needs to describe the SQL queries result set. Unfortunately we can only do very little
     # sanity checks here
     #
@@ -94,6 +96,33 @@ module OMF::OML
         tbl << schema.hash_to_row(row)
       end
       tbl
+    end
+
+    #
+    # Run a query on the database and return the result as an OmlTable. The provided schema
+    # needs to describe the SQL queries result set. Unfortunately we can only do very little
+    # sanity checks here. The query will be defined in the provided block which is passed in
+    # the Sequel Database object and is expected to return a Sequel Dataset instance.
+    #
+    def query2(table_name, schema, &block)
+      tbl = OmlTable.create(table_name, schema)
+      q = block.call(@db)
+      unless q.is_a? Sequel::Dataset
+        raise "Expected a Sequel::Dataset object, but got '#{q.class}'"
+      end
+      q.each do |row|
+        tbl << tbl.schema.hash_to_row(row)
+      end
+      tbl
+    end
+
+    # Return a Sequel Dataset from 'table_name'. See Sequel documentation on
+    # what one can do with that.
+    #
+    # db_table_name Name of table in database
+    #
+    def dataset(db_table_name)
+      @db.from(db_table_name)
     end
 
     # Start checking the database for tables and create a new stream
@@ -130,11 +159,6 @@ module OMF::OML
         report_new_table(table_name) unless table_name.start_with?('_')
       end
       @tables
-      
-      # postgresql
-      # SELECT tablename FROM pg_tables
-      # WHERE tablename NOT LIKE Ôpg\\_%Õ
-      # AND tablename NOT LIKE Ôsql\\_%Õ;       
     end
 
 
@@ -158,7 +182,7 @@ module OMF::OML
       end
       table
     end
-    
+
     def _schema_for_table(table_name)
       begin
         schema_descr = @db.schema(table_name).map do |col_name, cd|
@@ -173,30 +197,54 @@ module OMF::OML
         raise "Problems reading schema of table '#{table_name}'. Does it exist? (#{@db.tables})"
       end
     end
+
+    def _def_query_for_table(table_name)
+      t = table_name
+      @db["SELECT _senders.name as oml_sender, a.* FROM #{t} AS a INNER JOIN _senders ON (_senders.id = a.oml_sender_id);"]
+    end
   end
-  
+
 
 
 end
 
 if $0 == __FILE__
+  OMF::Base::Loggable.init_log('sql_source_test')
 
   require 'omf_oml/table'
-  ep = OMF::OML::OmlSqlSource.new('brooklynDemo.sq3')
-  ep.on_new_stream() do |s|
-    puts ">>>>>>>>>>>> New stream #{s.stream_name}: #{s.names.join(', ')}"
-    case s.stream_name
-    when 'wimaxmonitor_wimaxstatus'
-      select = [:oml_ts_server, :sender_hostname, :frequency, :signal, :rssi, :cinr, :avg_tx_pw]
-    when 'GPSlogger_gps_data'
-      select = [:oml_ts_server, :oml_sender_id, :lat, :lon]
-    end
+  db_file = File.join(File.dirname(__FILE__), '../../test/data/brooklynDemo.sq3')
+  ep = OMF::OML::OmlSqlSource.new('sqlite://' + File.absolute_path(db_file), limit: 10)
 
-    s.on_new_vector() do |v|
-      puts "New vector(#{s.stream_name}): #{v.select(*select).join('|')}"      
+  def on_new_stream(ep)
+    ep.on_new_stream() do |s|
+      puts ">>>>>>>>>>>> New stream #{s.stream_name}: #{s.schema.names}"
+      case s.stream_name
+      when 'wimaxmonitor_wimaxstatus'
+        select = [:oml_ts_server, :sender_hostname, :frequency, :signal, :rssi, :cinr, :avg_tx_pwr]
+      when 'GPSlogger_gps_data'
+        select = [:oml_ts_server, :oml_sender_id, :lat, :lon]
+      end
+
+      s.on_new_tuple() do |v|
+        begin
+          puts "New vector(#{s.stream_name}): #{v.select(*select).join('|')}"
+        rescue Exception => ex
+          puts "ERROR: #{ex}"
+          abort
+        end
+      end
     end
+    ep.run()
   end
-  ep.run()
+
+  t = ep.query2('gps', [[:lat, :float], [:lon, :float]]) do |db|
+    db.from('GPSlogger_gps_data').select(:lat, :lon).limit(2)
+  end
+  puts t.rows.inspect
+  puts t.schema
+
+  # Raw query on database
+  puts ep.dataset('GPSlogger_gps_data').select(:lat, :lon).limit(2).all
 
 end
 

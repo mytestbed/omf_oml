@@ -1,28 +1,28 @@
 
-require 'omf_oml/tuple'
+require 'omf_oml/oml_tuple'
 require 'omf_oml/table'
 
 module OMF::OML
-        
 
-  
+
+
   # Read the content of a table and feeds it out as a tuple store.
   # After creation of the object. The actual tuple feed is started
   # with a call to +run+.
   #
   class OmlSqlRow < OmlTuple
     attr_reader :row
-    
-    # 
+
+    #
     # Create a representation of a row in a database. Can be used to fill a table.
     #
     # @param [String] sql_table_name - name of SQL table in respective SQL database
     # @param [OmlSchema] schema - the schema describing the tuple
-    # @param [Sequel] db - Database 
-    # @param [Hash] opts:  
+    # @param [Sequel] db - Database
+    # @param [Hash] opts:
     #   - offset: Ignore first +offset+ rows. If negative or zero serve +offset+ rows initially
     #   - limit: Number of rows to fetch each time [1000]
-    #   - check_interval: Interval in seconds when to check for new data. If 0, only run once.
+    #   - check_interval: Interval in seconds when to check for new data. If < 0, only run once.
     #   - query_interval: Interval between consecutive queries when processing large result set.
     #
     def initialize(sql_table_name, schema, db, opts = {})
@@ -30,23 +30,23 @@ module OMF::OML
       @schema = schema
       raise "Expected OmlSchema but got '#{schema.class}" unless schema.is_a? OmlSchema
       @db = db
-      
+
       unless @offset = opts[:offset]
         @offset = 0
       end
       @limit = opts[:limit]
       @limit = 1000 unless @limit
-      
+
       @check_interval = opts[:check_interval]
-      @check_interval = 0 unless @check_interval
+      @check_interval = -1 unless @check_interval
       @query_interval = opts[:query_interval]
-      
+
       @on_new_vector_proc = {}
 
-      super opts[:name] || sql_table_name, schema 
+      super opts[:name] || sql_table_name, schema
     end
-    
-    
+
+
     # Return a specific element of the vector identified either
     # by it's name, or its col index
     #
@@ -56,18 +56,18 @@ module OMF::OML
       else
         unless @row.key? name_or_index
           raise "Unknown column name '#{name_or_index}'"
-        end 
+        end
         @row[name_or_index]
       end
     end
-    
-    # Return the elements of the row as an array using the 
+
+    # Return the elements of the row as an array using the
     # associated schema or 'schema' if non-nil.
     #
     def to_a(schema = nil)
       a = (schema || @schema).hash_to_row(@row) # don't need type conversion as sequel is doing this for us
     end
-    
+
     # Return an array including the values for the names elements
     # given as parameters.
     #
@@ -76,19 +76,19 @@ module OMF::OML
       col_names.collect do |n|
         unless @row.key? n
           raise "Unknown column name '#{n}'"
-        end 
+        end
         @row[n]
       end
     end
-        
+
     def ts
       self[:oml_ts_server]
     end
-    
+
     def seq_no
       self[:oml_seq]
-    end    
-    
+    end
+
     # Register a proc to be called when a new tuple arrived
     # on this stream.
     #
@@ -149,14 +149,14 @@ module OMF::OML
       self.on_new_tuple(t) do |v|
         r = v.to_a(schema)
         #puts r.inspect
-        t.add_row(r)   
+        t.add_row(r)
       end
       t
     end
 
 
     protected
-    
+
     def run(in_thread = true)
       return if @running
       if in_thread
@@ -172,16 +172,17 @@ module OMF::OML
         _run
       end
     end
-    
+
     private
-    
+
     def _run
       if @check_interval <= 0
-        while _run_once; end
+        #while _run_once; end
+        _run_once
       else
         @running = true
         while (@running)
-          begin 
+          begin
             unless _run_once
               # All rows read, wait a bit for news to show up
               sleep @check_interval
@@ -190,10 +191,10 @@ module OMF::OML
             warn ex
             debug "\t", ex.backtrace.join("\n\t")
           end
-        end 
+        end
       end
     end
-      
+
     # Run a query on database an serve all rows found one at a time.
     # Return true if there might be more rows in the database
     def _run_once
@@ -216,10 +217,10 @@ module OMF::OML
       debug "Read #{row_cnt} (total #{@offset}) rows from '#{@sname}'" if row_cnt > 0
       if more_to_read = row_cnt >= @limit # there could be more to read
         sleep @query_interval if @query_interval # don't hammer database
-      end 
-      more_to_read    
+      end
+      more_to_read
     end
-    
+
   end # OmlSqlRow
 
 
@@ -227,8 +228,19 @@ end
 
 if $0 == __FILE__
 
+  OMF::Base::Loggable.init_log('sql_row_test')
+
+  require 'omf_oml/sql_source'
+  db_file = File.join(File.dirname(__FILE__), '../../test/data/brooklynDemo.sq3')
+  ss = OMF::OML::OmlSqlSource.new('sqlite://' + File.absolute_path(db_file))
+
+  r = ss.create_stream('wimaxmonitor_wimaxstatus')
+  puts r
+
+  exit
+
   require 'omf_oml/table'
-  ep = OMF::OML::OmlSqlSource.new('brooklynDemo.sq3')
+  ep = OMF::OML::OmlSqlSource.new(File.join(File.dirname(__FILE__), '../../test/data/brooklynDemo.sq3'))
   ep.on_new_stream() do |s|
     puts ">>>>>>>>>>>> New stream #{s.stream_name}: #{s.names.join(', ')}"
     case s.stream_name
@@ -239,7 +251,7 @@ if $0 == __FILE__
     end
 
     s.on_new_vector() do |v|
-      puts "New vector(#{s.stream_name}): #{v.select(*select).join('|')}"      
+      puts "New vector(#{s.stream_name}): #{v.select(*select).join('|')}"
     end
   end
   ep.run()
