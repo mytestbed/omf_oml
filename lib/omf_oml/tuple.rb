@@ -1,5 +1,5 @@
 
-require 'omf_common/lobject'
+require 'omf_base/lobject'
 require 'omf_oml'
 require 'omf_oml/schema'
 
@@ -14,7 +14,7 @@ module OMF::OML
   # Use +OmlTuple+ if the schema is an OML one. +OmlTuple+ has additional convenience
   # methods.
   #
-  class Tuple < OMF::Common::LObject
+  class Tuple < OMF::Base::LObject
 
     # Return a specific element of the tuple identified either
     # by it's name, or its col index

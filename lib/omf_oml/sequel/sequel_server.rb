@@ -4,7 +4,7 @@ require 'time'
 require 'logger'
 require 'sequel'
 
-require 'omf_common/lobject'
+require 'omf_base/lobject'
 require 'omf_oml'
 
 # module OMF::OML
@@ -14,7 +14,7 @@ require 'omf_oml'
 module OMF::OML::Sequel
   module Server
 
-    class Query < OMF::Common::LObject
+    class Query < OMF::Base::LObject
 
       def self.parse(xmls, repoFactory = RepositoryFactory.new, logger = Logger.new(STDOUT))
         if xmls.kind_of? String
@@ -222,7 +222,7 @@ module OMF::OML::Sequel
 
     end # Query
 
-    class RepositoryFactory < OMF::Common::LObject
+    class RepositoryFactory < OMF::Base::LObject
 
       def initialize(opts = {})
         @opts = opts

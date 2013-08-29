@@ -1,7 +1,7 @@
 require 'monitor'
 require 'json'
 require 'set'
-require 'omf_common/lobject'
+require 'omf_base/lobject'
 require 'omf_oml'
 
 
@@ -19,7 +19,7 @@ module OMF::OML
   # This class represents a network consisting of nodes and links with their respective
   # attributes.
   #
-  class OmlNetwork < OMF::Common::LObject
+  class OmlNetwork < OMF::Base::LObject
     include MonitorMixin
 
     @@name2network = {}
@@ -310,7 +310,7 @@ module OMF::OML
 
   # This class represents an abstract network element and shouldn't be used directly.
   #
-  class NetworkElement < OMF::Common::LObject
+  class NetworkElement < OMF::Base::LObject
 
     attr_reader :name
     attr_reader :el_id
@@ -449,7 +449,7 @@ end
 
 if $0 == __FILE__
   require 'json'
-  include OMF::Common::OML
+  include OMF::Base::OML
 
   nw = OmlNetwork.new
 

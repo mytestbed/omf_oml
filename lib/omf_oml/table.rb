@@ -1,7 +1,7 @@
 
 require 'monitor'
 
-require 'omf_common/lobject'
+require 'omf_base/lobject'
 require 'omf_oml'
 require 'omf_oml/schema'
 
@@ -12,7 +12,7 @@ module OMF::OML
   # This class represents a database like table holding a sequence of OML measurements (rows) according
   # a common schema.
   #
-  class OmlTable < OMF::Common::LObject
+  class OmlTable < OMF::Base::LObject
 
     # @param opts
     # @opts :index Creates an index table (all rows have distinct values at column 'index')

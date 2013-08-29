@@ -1,5 +1,5 @@
 
-require 'omf_common/lobject'
+require 'omf_base/lobject'
 require 'omf_oml'
 
 require 'omf_oml/oml_tuple'
@@ -10,7 +10,7 @@ module OMF::OML
   # be visualized. After creating the object, the @run@ method needs to be called to
   # start processing the stream.
   #
-  class OmlEndpoint < OMF::Common::LObject
+  class OmlEndpoint < OMF::Base::LObject
 
     # Register a proc to be called when a new stream was
     # discovered on this endpoint.
@@ -77,7 +77,7 @@ module OMF::OML
   # and instance and then immediately calls the +run+ methods.
   #
   #
-  class OmlSession < OMF::Common::LObject  # :nodoc
+  class OmlSession < OMF::Base::LObject  # :nodoc
 
     # Return the value for the respective @key@ in the protocol header.
     #

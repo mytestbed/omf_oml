@@ -1,12 +1,12 @@
 
-require 'omf_common/lobject'
+require 'omf_base/lobject'
 require 'omf_oml'
 
 module OMF::OML
   
   # This class represents the schema of an OML measurement stream.
   #
-  class OmlSchema < OMF::Common::LObject
+  class OmlSchema < OMF::Base::LObject
     
     CLASS2TYPE = {
       TrueClass => 'boolean',
