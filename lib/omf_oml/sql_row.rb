@@ -18,18 +18,18 @@ module OMF::OML
     #
     # @param [String] sql_table_name - name of SQL table in respective SQL database
     # @param [OmlSchema] schema - the schema describing the tuple
-    # @param [Sequel] db - Database
+    # @param [Sequel::Dataset] query - Databasequery to execute
     # @param [Hash] opts:
     #   - offset: Ignore first +offset+ rows. If negative or zero serve +offset+ rows initially
     #   - limit: Number of rows to fetch each time [1000]
     #   - check_interval: Interval in seconds when to check for new data. If < 0, only run once.
     #   - query_interval: Interval between consecutive queries when processing large result set.
     #
-    def initialize(sql_table_name, schema, db, opts = {})
+    def initialize(sql_table_name, schema, query, opts = {})
       @sname = sql_table_name
       @schema = schema
       raise "Expected OmlSchema but got '#{schema.class}" unless schema.is_a? OmlSchema
-      @db = db
+      @query = query
 
       unless @offset = opts[:offset]
         @offset = 0
@@ -201,12 +201,12 @@ module OMF::OML
       row_cnt = 0
       t = table_name = @sname
       if (@offset < 0)
-        cnt = @db[table_name.to_sym].count()
+        cnt = @query.count()
         @offset = cnt + @offset # @offset was negative here
         debug("Initial offset #{@offset} in '#{table_name}' with #{cnt} rows")
         @offset = 0 if @offset < 0
       end
-      @db["SELECT _senders.name as oml_sender, #{t}.* FROM #{t} INNER JOIN _senders ON (_senders.id = #{t}.oml_sender_id) LIMIT #{@limit} OFFSET #{@offset};"].each do |r|
+      @query.limit(@limit, @offset).each do |r|
         @row = r
         @on_new_vector_proc.each_value do |proc|
           proc.call(self)
