@@ -159,9 +159,6 @@ module OMF::OML
       t
     end
 
-
-    protected
-
     def run(in_thread = true)
       return if @running
       if in_thread
@@ -237,29 +234,12 @@ if $0 == __FILE__
 
   require 'omf_oml/sql_source'
   db_file = File.join(File.dirname(__FILE__), '../../test/data/brooklynDemo.sq3')
-  ss = OMF::OML::OmlSqlSource.new('sqlite://' + File.absolute_path(db_file))
+  ss = OMF::OML::OmlSqlSource.new('sqlite://' + File.expand_path(db_file))
 
   r = ss.create_stream('wimaxmonitor_wimaxstatus')
-  puts r
-
-  exit
-
-  require 'omf_oml/table'
-  ep = OMF::OML::OmlSqlSource.new(File.join(File.dirname(__FILE__), '../../test/data/brooklynDemo.sq3'))
-  ep.on_new_stream() do |s|
-    puts ">>>>>>>>>>>> New stream #{s.stream_name}: #{s.names.join(', ')}"
-    case s.stream_name
-    when 'wimaxmonitor_wimaxstatus'
-      select = [:oml_ts_server, :sender_hostname, :frequency, :signal, :rssi, :cinr, :avg_tx_pw]
-    when 'GPSlogger_gps_data'
-      select = [:oml_ts_server, :oml_sender_id, :lat, :lon]
-    end
-
-    s.on_new_vector() do |v|
-      puts "New vector(#{s.stream_name}): #{v.select(*select).join('|')}"
-    end
-  end
-  ep.run()
+  r.run(false)
+  puts '=============='
+  puts r.row.inspect
 
 end
 

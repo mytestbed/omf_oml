@@ -194,7 +194,7 @@ module OMF::OML
           unless type = cd[:type] || FALLBACK_MAPPING[cd[:db_type]]
             warn "Can't find ruby type for database type '#{cd[:db_type]}'"
           end
-          {name: col_name, type: type}
+          {:name => col_name, :type => type}
         end
         #puts "SCHEMA_DESCR>>>> #{schema_descr}"
         schema = OmlSchema.new(schema_descr)
@@ -204,9 +204,11 @@ module OMF::OML
     end
 
     def _def_query_for_table(table_name)
-      t = table_name
+      t = table_name.to_sym
       @db["SELECT _senders.name as oml_sender, a.* FROM #{t} AS a INNER JOIN _senders ON (_senders.id = a.oml_sender_id);"]
-    end
+      @db[t].select(:_senders__name___oml_sender).select_all(t).select_append(:_senders__name___oml_sender) \
+          .join('_senders'.to_sym, :id => :oml_sender_id)
+      end
   end
 
 
@@ -218,7 +220,7 @@ if $0 == __FILE__
 
   require 'omf_oml/table'
   db_file = File.join(File.dirname(__FILE__), '../../test/data/brooklynDemo.sq3')
-  ep = OMF::OML::OmlSqlSource.new('sqlite://' + File.absolute_path(db_file), limit: 10)
+  ep = OMF::OML::OmlSqlSource.new('sqlite://' + File.expand_path(db_file), :limit => 10)
 
   def on_new_stream(ep)
     ep.on_new_stream() do |s|
@@ -249,7 +251,7 @@ if $0 == __FILE__
   puts t.schema
 
   # Raw query on database
-  puts ep.dataset('GPSlogger_gps_data').select(:lat, :lon).limit(2).all
+  puts ep.dataset('GPSlogger_gps_data').select(:lat, :lon).limit(2).all.inspect
 
 end
 
