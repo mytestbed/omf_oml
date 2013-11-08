@@ -8,21 +8,21 @@ require 'omf_base/lobject'
 require 'omf_oml'
 
 module OMF::OML
-  
+
   # This class represents the schema of an OML measurement stream.
   #
   class OmlSchema < OMF::Base::LObject
-    
+
     CLASS2TYPE = {
       TrueClass => 'boolean',
       FalseClass => 'boolean',
       String => 'string',
-      Symbol => 'string',            
+      Symbol => 'string',
       Fixnum => 'decimal',
       Float => 'double',
       Time => 'dateTime'
     }
-    
+
     # Map various type definitions (all lower case) into a single one
     ANY2TYPE = {
       'integer' => :integer,
@@ -43,9 +43,9 @@ module OMF::OML
       'date' => :date,
       'dateTime'.downcase => :dateTime, # should be 'datetime' but we downcase the string for comparison
       'timestamp' => :dateTime, # Postgreql specific, not sure if this works as it.
-      'key' => :key,      
+      'key' => :key,
     }
-    
+
     OML_INTERNALS = [
       :oml_sender,
       :oml_sender_id,
@@ -60,7 +60,7 @@ module OMF::OML
       end
       return self.new(schema_description)
     end
-    
+
     # Return the col name at a specific index
     #
     def name_at(index)
@@ -69,17 +69,17 @@ module OMF::OML
       end
       d[:name]
     end
-    
+
     # Return the col index for column named +name+
     #
     def index_for_col(name)
       name = name.to_sym
       @schema.each_with_index do |col, i|
-        return i if col[:name] == name 
+        return i if col[:name] == name
       end
       raise "Unknonw column '#{name}'"
     end
-    
+
     # Return the column names as an array
     #
     def names
@@ -91,25 +91,25 @@ module OMF::OML
     def type_at(index)
       @schema[index][:type]
     end
-    
+
     def columns
       @schema
     end
-    
+
     def insert_column_at(index, col)
-      @schema.insert(index, _create_col_descr(col))       
+      @schema.insert(index, _create_col_descr(col))
     end
-    
+
     def replace_column_at(index, col)
       @schema[index] = _create_col_descr(col)
     end
 
     def each_column(&block)
-      @schema.each do |c| 
-        block.call(c) 
+      @schema.each do |c|
+        block.call(c)
       end
     end
-    
+
     # Translate a record described in a hash of 'col_name => value'
     # to a row array. Note: Will suppress column '__id__'
     #
@@ -127,7 +127,7 @@ module OMF::OML
         end
         unless (v = hrow[cname]) ||  (v = hrow[cname.to_sym])
           next nil if set_nil_when_missing
-          raise "Missing record element '#{cname}' in record '#{hrow}'"
+          raise "Missing record element '#{cname}' in record '#{hrow}' - schema: #{@schema}"
         end
         call_type_conversion ? cdescr[:type_conversion].call(v) : v
       end
@@ -135,7 +135,7 @@ module OMF::OML
       #puts "#{r.inspect} -- #{@schema.map {|c| c[:name]}.inspect}"
       r
     end
-    
+
     # Cast each element in 'row' into its proper type according to this schema
     #
     def cast_row(raw_row, ignore_first_column = false)
@@ -150,15 +150,15 @@ module OMF::OML
       end
       row
     end
-    
+
     def describe
       @schema.map {|c| {:name => c[:name], :type => c[:type], :title => c[:title] }}
     end
-    
+
     def to_json(*opt)
       describe.to_json(*opt)
     end
-    
+
     def clone(exclude_oml_internals = false)
       c = self.dup
       schema = @schema.clone
@@ -170,13 +170,13 @@ module OMF::OML
       c.instance_variable_set('@schema', schema)
       c
     end
-    
+
     def to_s
       "OmlSchema: #{@schema.map {|c| "#{c[:name]}:#{c[:type]}"}.join(', ')}"
     end
-    
+
     protected
-    
+
     # schema_description - Array containing [name, type*] for every column in table
     #   TODO: define format of TYPE
     #
@@ -187,9 +187,9 @@ module OMF::OML
         insert_column_at(i, cdesc)
       end
       debug "schema: '#{describe.inspect}'"
-      
+
     end
-    
+
     # Create a column descriptor from whatever is given by user
     #
     def _create_col_descr(col)
@@ -199,12 +199,12 @@ module OMF::OML
       if col.kind_of? Array
         # should be [name, type]
         if col.length == 1
-          col = {:name => col[0].to_sym, 
-                  :type => :string, 
+          col = {:name => col[0].to_sym,
+                  :type => :string,
                   :title => col[0].to_s.split('_').collect {|s| s.capitalize}.join(' ')}
         elsif col.length == 2
           col = {:name => col[0].to_sym,
-                  :type => col[1].to_sym, 
+                  :type => col[1].to_sym,
                   :title => col[0].to_s.split('_').collect {|s| s.capitalize}.join(' ')}
         elsif col.length == 3
           col = {:name => col[0].to_sym, :type => col[1].to_sym, :title => col[2]}
@@ -217,7 +217,7 @@ module OMF::OML
           col[:title] = col[:name].to_s.split('_').collect {|s| s.capitalize}.join(' ')
         end
       end
-      
+
       # should normalize type
       if type = col[:type]
         tn = type.to_s.split('(')[0] # take care of types like varargs(..)
@@ -226,21 +226,21 @@ module OMF::OML
           type = :string
         end
       else
-        warn "Missing type definition in '#{col[:name]}', default to 'string' (#{col.inspect})"          
+        warn "Missing type definition in '#{col[:name]}', default to 'string' (#{col.inspect})"
         type = :string
       end
       col[:type] = type
-      
+
       col[:type_conversion] = case type
         when :string
           lambda do |r| r end
         when :key
           lambda do |r| r end
-        when :integer 
+        when :integer
           lambda do |r| r.to_i end
-        when :float 
+        when :float
           lambda do |r| r.to_f end
-        when :date 
+        when :date
           lambda do |r| Date.parse(r) end
         when :dateTime
           lambda do |r| Time.parse(r) end
@@ -249,5 +249,5 @@ module OMF::OML
       col
     end
   end # OmlSchema
-  
+
 end
