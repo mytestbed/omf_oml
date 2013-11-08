@@ -33,7 +33,7 @@ module OMF::OML
     def initialize(sql_table_name, schema, query, opts = {})
       @sname = sql_table_name
       @schema = schema
-      raise "Expected OmlSchema but got '#{schema.class}" unless schema.is_a? OmlSchema
+      raise "Expected OmlSchema but got '#{schema.class}'" unless schema.is_a? OmlSchema
       @query = query
 
       unless @offset = opts[:offset]
