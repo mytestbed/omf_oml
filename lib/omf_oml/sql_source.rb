@@ -34,6 +34,7 @@ module OMF::OML
     # Sequel.connect(:adapter=>'postgres', :host=>'norbit.npc.nicta.com.au', :user=>'oml2', :password=>'omlisgoodforyou', :database=>'openflow-demo')
     #
     def initialize(db_opts, row_opts = {})
+      OMF::Base::Loggable.init_log('OmlSqlSource')
       @running = false
       @on_new_stream_procs = {}
       @tables = {}
