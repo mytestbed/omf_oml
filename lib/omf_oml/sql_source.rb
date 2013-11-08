@@ -61,12 +61,20 @@ module OMF::OML
     # table_name - Name of table in the SQL database
     # opts -
     #   :name - name used for returned OML Table [table_name]
+    #   :schema - Schema to use instead of default table schema
+    #   :query - Query to use instead of default one
     #   All other options defined for OmlSqlRow#new
     #
     def create_table(table_name, opts = {})
       tn = opts.delete(:name) || table_name
-      schema = _schema_for_table(table_name)
-      r = OmlSqlRow.new(table_name, schema, _def_query_for_table(table_name), opts)
+      schema = opts.delete(:schema) || _schema_for_table(table_name)
+      if q = opts.delete(:query)
+        query = (q.is_a? String) ? @db[q] : q
+      else
+        query = _def_query_for_table(table_name)
+      end
+      r = OmlSqlRow.new(table_name, schema, query, opts)
+      opts[:schema] = schema
       r.to_table(tn, opts)
     end
 
@@ -179,7 +187,8 @@ module OMF::OML
       unless table =  @tables[table_name] # check if already reported before
         debug "Found table: #{table_name}"
         schema = _schema_for_table(table_name)
-        table = @tables[table_name] = OmlSqlRow.new(table_name, schema, @db, @row_opts)
+        query = _def_query_for_table(table_name)
+        table = @tables[table_name] = OmlSqlRow.new(table_name, schema, query, @row_opts)
         #table = @tables[table_name] = OmlSqlRow.new(table_name, @db.schema(table_name), @db_opts, self, @row_opts)
         @on_new_stream_procs.each_value do |proc|
           proc.call(table)
@@ -193,6 +202,11 @@ module OMF::OML
         schema_descr = @db.schema(table_name).map do |col_name, cd|
           unless type = cd[:type] || FALLBACK_MAPPING[cd[:db_type]]
             warn "Can't find ruby type for database type '#{cd[:db_type]}'"
+          end
+          if col_name == :oml_sender_id
+            # see _def_query_for_table(table_name) which replaces sender_id by sender name
+            col_name = :oml_sender
+            type = 'string'
           end
           {:name => col_name, :type => type}
         end
