@@ -25,17 +25,11 @@ module OMF::OML
     # by it's name, or its col index
     #
     def [](name_or_index)
-      @vprocs[name_or_index].call(@raw)
+      @schema.cast_col(name_or_index, @raw)
     end
 
     # Return the elements of the tuple as an array
     def to_a()
-      # res = []
-      # r = @raw
-      # @schema.each do |col|
-        # res << @vprocs[col[:name]].call(r)
-      # end
-      # res
       @schema.cast_row(@raw)
     end
 
@@ -44,10 +38,27 @@ module OMF::OML
     #
     def select(*col_names)
       r = @raw
-      col_names.collect do |n|
-        p = @vprocs[n]
-        p ? p.call(r) : nil
+      col_names.map do |n|
+        self[n]
       end
+    end
+
+    # Return a table (more precisely an OmlTable instance) fed from
+    # the content of this tuple stream.
+    #
+    # table_name - Name of table
+    # opts -
+    #   All options defined for OmlTable#create
+    #
+    def create_table(table_name, opts = {})
+      table = OmlTable.create(table_name, @schema, opts)
+      id = -1
+      on_new_tuple() do |t|
+        row = @schema.cast_row(@raw, true)
+        #puts "ROW>> #{row.inspect}"
+        table.add_row(row)
+      end
+      table
     end
 
     attr_reader :schema
@@ -63,9 +74,9 @@ module OMF::OML
       @raw = []
 #      puts "SCHEMA: #{schema.inspect}"
       @on_new_tuple_procs = {}
-      
+
       super name
-      process_schema(@schema)
+      #process_schema(@schema)
     end
 
 
@@ -82,7 +93,7 @@ module OMF::OML
       end
     end
 
-    # Register a proc to be called when a new tuple arrived 
+    # Register a proc to be called when a new tuple arrived
     #
     def on_new_tuple(key = :_, &proc)
       if proc
@@ -94,22 +105,22 @@ module OMF::OML
 
 
     protected
-    def process_schema(schema)
-      i = 0
-      @vprocs = {}
-      schema.each_column do |col| #
-        name = col[:name] || raise("Ill-formed schema '#{schema}'")
-        type = col[:type] || raise("Ill-formed schema '#{schema}'")
-        @vprocs[name] = @vprocs[i] = case type
-          when :string
-            lambda do |r| r[i] end
-          when :float 
-            lambda do |r| r[i].to_f end
-          else raise "Unrecognized Schema type '#{type}'"
-        end
-        i += 1
-      end
-    end
+    # def process_schema(schema)
+      # i = 0
+      # @vprocs = {}
+      # schema.each_column do |col| #
+        # name = col[:name] || raise("Ill-formed schema '#{schema}'")
+        # type = col[:type] || raise("Ill-formed schema '#{schema}'")
+        # @vprocs[name] = @vprocs[i] = case type
+          # when :string
+            # lambda do |r| r[i] end
+          # when :float
+            # lambda do |r| r[i].to_f end
+          # else raise "Unrecognized Schema type '#{type}'"
+        # end
+        # i += 1
+      # end
+    # end
 
   end # Tuple
 end # OMF::OML

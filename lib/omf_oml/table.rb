@@ -93,10 +93,10 @@ module OMF::OML
     # parameters, an 'action' and the content changed. The 'action' is either
     # ':added', or ':removed' and the content is an array of rows.
     #
-    def on_content_changed(key, offset = -1, &proc)
+    def on_content_changed(key = nil, offset = -1, &proc)
       #puts ">>>>>>> #{offset}"
       if proc
-        @on_content_changed[key] = proc
+        @on_content_changed[key || proc] = proc
         if offset >= 0
           #with_offset = proc.arity == 2
           proc.call(:added, @rows[offset .. -1])

@@ -26,7 +26,8 @@ module OMF::OML
     # for all adaptors
     #
     FALLBACK_MAPPING = {
-      'UNSIGNED INTEGER' => :integer
+      'UNSIGNED INTEGER' => :integer,
+      'UNSIGNED BIGINT' => :integer
     }
 
     # db_opts - Options used to create a Sequel adapter

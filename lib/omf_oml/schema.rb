@@ -44,6 +44,9 @@ module OMF::OML
       'dateTime'.downcase => :dateTime, # should be 'datetime' but we downcase the string for comparison
       'timestamp' => :dateTime, # Postgreql specific, not sure if this works as it.
       'key' => :key,
+      'bool' => :bool,
+      'blob' => :blob,
+      'blob64' => :blob64 # base64 encoded blob
     }
 
     OML_INTERNALS = [
@@ -73,11 +76,19 @@ module OMF::OML
     # Return the col index for column named +name+
     #
     def index_for_col(name)
+      if name.is_a? Integer
+        # seems they already know hte index
+        index = name
+        if (index >= @schema.length)
+          raise "Index '#{index}' points past schema - #{schema.length}"
+        end
+        return index
+      end
       name = name.to_sym
       @schema.each_with_index do |col, i|
         return i if col[:name] == name
       end
-      raise "Unknonw column '#{name}'"
+      raise "Unknown column '#{name}'"
     end
 
     # Return the column names as an array
@@ -149,6 +160,16 @@ module OMF::OML
         row << @schema[i + start_index][:type_conversion].call(el)
       end
       row
+    end
+
+    # Cast a named column from a 'raw' row into its proper type according to this schema
+    #
+    def cast_col(col_name, raw_row)
+      index = index_for_col(col_name)
+      unless raw_value = raw_row[index]
+        raise "Row doesn't include a value at '#{index}' (#{raw_row.inspect}-#{describe}) "
+      end
+      value = @schema[index][:type_conversion].call(raw_value)
     end
 
     def describe
@@ -240,10 +261,15 @@ module OMF::OML
           lambda do |r| r.to_i end
         when :float
           lambda do |r| r.to_f end
+        when :bool
+          lambda do |r| (r.downcase.start_with? 't') ? true : false end
         when :date
           lambda do |r| Date.parse(r) end
         when :dateTime
           lambda do |r| Time.parse(r) end
+        when :blob64
+          require "base64"
+          lambda do |r| Base64.decode64(r) end
         else raise "Unrecognized Schema type '#{type}'"
       end
       col
