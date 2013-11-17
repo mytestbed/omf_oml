@@ -127,6 +127,10 @@ module OMF::OML
       els = desc.split(' ')
       #puts "ELS: #{els.inspect}"
       index = els.shift.to_i - 1
+      if @streams[index]
+        warn "Schema '#{index}' already defined"
+        return
+      end
       sname = els.shift
       schema_desc = els.collect do |el|
         name, type = el.split(':')

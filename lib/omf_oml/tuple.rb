@@ -7,6 +7,7 @@
 require 'omf_base/lobject'
 require 'omf_oml'
 require 'omf_oml/schema'
+require 'omf_oml/table'
 
 module OMF::OML
 
