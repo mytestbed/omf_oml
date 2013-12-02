@@ -54,7 +54,7 @@ module OMF::OML
     def create_table(table_name, opts = {})
       table = OmlTable.create(table_name, @schema, opts)
       id = -1
-      on_new_tuple() do |t|
+      on_new_tuple(table) do |t|
         row = @schema.cast_row(@raw, true)
         #puts "ROW>> #{row.inspect}"
         table.add_row(row)
@@ -66,18 +66,11 @@ module OMF::OML
     attr_reader :stream_name
 
     def initialize(name, schema)
-      # if schema.kind_of? Array
-        # schema = OmlSchema.new(schema)
-      # end
       @stream_name = name
       @schema = OmlSchema.create(schema)
-
       @raw = []
-#      puts "SCHEMA: #{schema.inspect}"
       @on_new_tuple_procs = {}
-
       super name
-      #process_schema(@schema)
     end
 
 
@@ -106,22 +99,6 @@ module OMF::OML
 
 
     protected
-    # def process_schema(schema)
-      # i = 0
-      # @vprocs = {}
-      # schema.each_column do |col| #
-        # name = col[:name] || raise("Ill-formed schema '#{schema}'")
-        # type = col[:type] || raise("Ill-formed schema '#{schema}'")
-        # @vprocs[name] = @vprocs[i] = case type
-          # when :string
-            # lambda do |r| r[i] end
-          # when :float
-            # lambda do |r| r[i].to_f end
-          # else raise "Unrecognized Schema type '#{type}'"
-        # end
-        # i += 1
-      # end
-    # end
 
   end # Tuple
 end # OMF::OML
