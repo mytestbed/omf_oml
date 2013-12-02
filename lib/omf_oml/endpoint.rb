@@ -127,6 +127,10 @@ module OMF::OML
       els = desc.split(' ')
       #puts "ELS: #{els.inspect}"
       index = els.shift.to_i - 1
+      if (index < 0)
+        # meta data - ignore
+        return
+      end
       if @streams[index]
         warn "Schema '#{index}' already defined"
         return
@@ -147,7 +151,7 @@ module OMF::OML
     end
 
     def parse_meta_row(row)
-      puts "META>> #{row.inspect}"
+      #puts "META>> #{row.inspect}"
       unless row.length == 5
         warn "Received mis-formatted META tuple - #{row}"
         return
@@ -197,11 +201,7 @@ if $0 == __FILE__
 
   ep = OMF::OML::OmlEndpoint.new(3003)
   ep.on_new_stream() do |name, stream|
-    puts "New stream: #{stream}-#{stream.class}"
-    # stream.on_new_tuple() do |v|
-      # puts "New vector: #{v.select(:a, :f)} - #{v.to_a}"
-      # #toml.add_row(v.select(:oml_ts, :value))
-    # end
+    puts "New stream: #{name}-#{stream}"
     table = stream.create_table(name + '_tbl', :max_size => 5)
     table.on_content_changed do |action, change|
       puts "TTTT > #{action} - #{change}"
