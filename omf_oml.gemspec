@@ -24,5 +24,6 @@ Gem::Specification.new do |s|
 #  s.add_development_dependency "minitest", "~> 2.11.3"
   #s.add_runtime_dependency "sqlite3", "~> 1.3.6"
   s.add_runtime_dependency 'omf_base'
-  s.add_runtime_dependency 'sequel', '~> 3.45'
+  s.add_runtime_dependency 'sequel', '~> 3'
+  s.add_runtime_dependency "sqlite3", '~> 1.3'
 end
