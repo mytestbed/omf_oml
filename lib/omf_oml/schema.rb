@@ -207,7 +207,7 @@ module OMF::OML
       schema_description.each_with_index do |cdesc, i|
         insert_column_at(i, cdesc)
       end
-      debug "schema: '#{describe.inspect}'"
+      debug "xschema: '#{describe.inspect}'"
 
     end
 
@@ -219,20 +219,23 @@ module OMF::OML
       end
       if col.kind_of? Array
         # should be [name, type]
+        # Make sure that any leading spaces are being removed on name
+        col[0] = col[0].to_s.strip.to_sym
         if col.length == 1
-          col = {:name => col[0].to_sym,
+          col = {:name => col[0],
                   :type => :string,
                   :title => col[0].to_s.split('_').collect {|s| s.capitalize}.join(' ')}
         elsif col.length == 2
-          col = {:name => col[0].to_sym,
+          col = {:name => col[0],
                   :type => col[1].to_sym,
                   :title => col[0].to_s.split('_').collect {|s| s.capitalize}.join(' ')}
         elsif col.length == 3
-          col = {:name => col[0].to_sym, :type => col[1].to_sym, :title => col[2]}
+          col = {:name => col[0], :type => col[1].to_sym, :title => col[2]}
         else
           throw "Simple column schema should consist of [name, type, title] array, but found '#{col.inspect}'"
         end
       elsif col.kind_of? Hash
+        col[:name] = col[:name].to_s.strip.to_sym
         # ensure there is a :title property
         unless col[:title]
           col[:title] = col[:name].to_s.split('_').collect {|s| s.capitalize}.join(' ')
