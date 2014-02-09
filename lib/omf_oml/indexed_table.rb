@@ -37,8 +37,11 @@ module OMF::OML
     # index_col - Name of column to index
     # schema - Table schema
     #
-    def initialize(name, index_col, schema, &on_before_row_added)
-      super name, schema, {}, &on_before_row_added
+    def initialize(name, index_col, schema, opts = {}, &on_before_row_added)
+      # if opts[:supress_index].nil?
+        # opts[:supress_index] = true
+      # end
+      super name, schema, opts, &on_before_row_added
       @index_col = index_col
       @index2row = {} # each row is associated with an instance of the index
       @index = @schema.index_for_col(index_col)

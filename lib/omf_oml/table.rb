@@ -40,10 +40,11 @@ module OMF::OML
     #
     # tname - Name of table
     # schema - OmlSchema or Array containing [name, type*] for every column in table
-    #   Table adds a '__id__' column at the beginning which keeps track of the rows unique id
+    #   Table adds a '__id__' column at the beginning which keeps track of the rows unique id unless
+    #   option 'supress_index' is set.
     # opts -
     #   :max_size - keep table to that size by dropping older rows
-    #   :index - only keep the latest inserted row for a unique col value - messes with row order
+    #   :supress_index - don't add index, even if schema doesn't start with '__id__'
     #
     def initialize(tname, schema, opts = {}, &on_before_row_added)
       super tname
@@ -51,9 +52,11 @@ module OMF::OML
       @name = tname
       @schema = OmlSchema.create(schema)
       @add_index = false
-      unless @schema.name_at(0) == :__id__
-        @add_index = true
-        @schema.insert_column_at(0, [:__id__, 'int'])
+      unless opts[:supress_index]
+        unless @schema.name_at(0) == :__id__
+          @add_index = true
+          @schema.insert_column_at(0, [:__id__, 'int'])
+        end
       end
       @opts = opts
       if (index = opts[:index])
