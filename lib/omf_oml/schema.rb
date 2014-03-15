@@ -207,7 +207,7 @@ module OMF::OML
       schema_description.each_with_index do |cdesc, i|
         insert_column_at(i, cdesc)
       end
-      debug "xschema: '#{describe.inspect}'"
+      debug "schema: '#{describe.inspect}'"
 
     end
 
