@@ -57,7 +57,7 @@ module OMF::OML
         schema = csv.headers.map do |c|
           c = c.encode('UTF-8', :invalid => :replace, :undef => :replace, :replace => '?')
           name, type = c.split(':')
-          [name, type || 'string']
+          [name.strip, (type || 'string').strip]
         end
       end
       super tname, schema, opts
