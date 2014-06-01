@@ -166,6 +166,7 @@ module OMF::OML
       st = self.class.new(name, @schema, table_opts)
       st.instance_variable_set(:@sname, sname)
       st.instance_variable_set(:@master_ds, self)
+      st.instance_variable_set(:@add_index, true)
       def st.release
         @master_ds.on_content_changed(@sname) # release callback
       end
@@ -176,11 +177,13 @@ module OMF::OML
           warn "No support for removing rows from sliced table '#{sname}'."
           next
         end
+        first_row = true
         rows.each do |row|
           if row[index] == col_value
             row = row[1 .. -1] # remove the row_id
-            debug "Add row '#{row.inspect}'"
+            debug "Add first row '#{row.inspect}'" if first_row
             st.add_row(row)
+            first_row = false
           end
         end
       end
