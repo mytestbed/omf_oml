@@ -58,6 +58,7 @@ module OMF::OML
           @schema.insert_column_at(0, [:__id__, 'int'])
         end
       end
+      @col_count = @schema.columns.length
       @opts = opts
       if (index = opts[:index])
         throw "No longer supported, use IndexedTable instead"
@@ -163,7 +164,7 @@ module OMF::OML
     def create_sliced_table(col_name, col_value, table_opts = {})
       sname = "#{@name}_slice_#{Kernel.rand}"
 
-      st = self.class.new(name, @schema, table_opts)
+      st = self.class.new(name, @schema, @opts.merge(table_opts))
       st.instance_variable_set(:@sname, sname)
       st.instance_variable_set(:@master_ds, self)
       st.instance_variable_set(:@add_index, true)
@@ -230,6 +231,9 @@ module OMF::OML
     # was ultimately added.
     #
     def _add_row_finally(row)
+      unless row.length == @col_count
+        raise "Unexpected col count for row '#{row}' - schema: #{@schema}"
+      end
       # if @indexed_rows
         # @indexed_rows[row[@index_col]] = row
         # return
