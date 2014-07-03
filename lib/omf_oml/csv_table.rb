@@ -20,7 +20,8 @@ module OMF::OML
     # @param opts
     #
     def self.create(tname, file_name, opts = {}, &on_before_row_added)
-      self.new(tname, file_name, opts, &on_before_row_added)
+      opts[:file_name] = file_name
+      self.new(tname, opts[:schema], opts, &on_before_row_added)
     end
 
     #
@@ -28,27 +29,29 @@ module OMF::OML
     # schema - OmlSchema or Array containing [name, type*] for every column in table
     #   Table adds a '__id__' column at the beginning which keeps track of the rows unique id
     # @params opts
+    # @opts :file_name - Name of file to read data from
     # @opts :max_size - keep table to that size by dropping older rows
     # @opts :index - only keep the latest inserted row for a unique col value - messes with row order
     # @opts :has_csv_header If true use first row in file as schema descriptor
     # @opts :schema Schema associated with this table
     #
-    def initialize(tname, file_name, opts = {}, &on_before_row_added)
+    def initialize(tname, schema, opts = {}, &on_before_row_added)
+      file_name = opts[:file_name]
       unless File.readable?(file_name)
         raise "Can't read CSV file '#{file_name}'"
       end
       csv_opts = {}
-      csv_opts[:headers] = (opts.delete(:has_csv_header) == true)
+      csv_opts[:headers] = (opts[:has_csv_header] == true) #(opts.delete(:has_csv_header) == true)
       unless csv_opts[:headers]
         raise "Current implementation only works with CSV files which inlcude a schema description in the first line"
       end
 
-      encoding =  opts.delete(:encoding)
+      encoding =  opts[:encoding] #opts.delete(:encoding)
       mode =  "rb"
       mode << ":#{encoding}" if encoding
       csv = CSV.open(file_name, mode, csv_opts)
 
-      unless schema = opts.delete(:schema)
+      unless schema = opts[:schema]
         unless csv_opts[:headers]
           raise "No schema given and ':has_csv_header' not set to capture schema from file header"
         end
@@ -79,6 +82,29 @@ module OMF::OML
 
     end
 
+    # Return a new table which only contains the rows of this
+    # table whose value in column 'col_name' is equal to 'col_value'
+    #
+    def create_sliced_table(col_name, col_value, table_opts = {})
+      sname = "#{@name}_slice_#{Kernel.rand(100000)}"
+      st = OmlTable.new(sname, @schema, table_opts)
+      index = @schema.index_for_col(col_name)
+      first_row = true
+      @rows.each do |row|
+        if row[index] == col_value
+          #row = row[1 .. -1] # remove the row_id
+          debug "Add first row '#{row.inspect}'" if first_row
+          st.add_row(row)
+          first_row = false
+        end
+      end
+      def st.release
+        # do nothing
+      end
+
+      debug "Created sliced table '#{sname}' from '#{@name}' (rows: #{st.rows.length} from #{@rows.length})"
+      st
+    end
 
 
   end # class
