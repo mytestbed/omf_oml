@@ -31,6 +31,7 @@ module OMF::OML
     #   - query_interval: Interval between consecutive queries when processing large result set.
     #
     def initialize(sql_table_name, schema, query, opts = {})
+      debug "query:  #{query.sql}"
       @sname = sql_table_name
       @schema = schema
       raise "Expected OmlSchema but got '#{schema.class}'" unless schema.is_a? OmlSchema
