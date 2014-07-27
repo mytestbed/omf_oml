@@ -131,6 +131,21 @@ module OMF::OML
       end
     end
 
+    # Remove all rows from table.
+    #
+    # NOTE: +on_row_removed+ callbacks are done within the monitor.
+    #
+    def clear()
+      synchronize do
+        return if @rows.empty?
+        old = @rows
+        @rows = []
+        #@row_id = 0 # Should we rest that as well??
+        _notify_content_changed(:removed, old)
+      end
+    end
+
+
     def <<(row)
       add_row(row)
     end
@@ -234,10 +249,6 @@ module OMF::OML
       unless row.length == @col_count
         raise "Unexpected col count for row '#{row}' - schema: #{@schema}"
       end
-      # if @indexed_rows
-        # @indexed_rows[row[@index_col]] = row
-        # return
-      # end
 
       @rows << row
       if @max_size && @max_size > 0 && (s = @rows.size) > @max_size
@@ -251,12 +262,7 @@ module OMF::OML
 
     def _notify_content_changed(action, rows)
       @on_content_changed.each_value do |proc|
-        #puts "call: #{proc.inspect}"
-        #if proc.arity == 1
-          proc.call(action, rows)
-        #else
-          #proc.call(row, @offset)
-        #end
+        proc.call(action, rows)
       end
     end
 
