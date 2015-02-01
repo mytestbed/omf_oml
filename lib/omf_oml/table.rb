@@ -44,7 +44,7 @@ module OMF::OML
     #   option 'supress_index' is set.
     # opts -
     #   :max_size - keep table to that size by dropping older rows
-    #   :supress_index - don't add index, even if schema doesn't start with '__id__'
+    #   :supress_index - don't pex, even if schema doesn't start with '__id__'
     #
     def initialize(tname, schema, opts = {}, &on_before_row_added)
       super tname

@@ -234,10 +234,13 @@ module OMF::OML
     #
     def to_table(aspect, table_opts = {})
       aspect = aspect.to_sym
+      table_opts[:supress_index] = true
       case aspect
       when :nodes
+        #puts "TABLE SCHEME 1 >>>> #{@node_schema}"
         table = OmlTable.create @name + '/nodes', @node_schema, table_opts
-        #puts "TABLE SCHEME >>>> #{table.schema}"
+        #puts "TABLE SCHEME 2 >>>> #{@node_schema} - #{table.schema}"
+        #table.add_rows(@nodes)
         table.add_rows(@nodes.map do |id, n|
           @node_schema.hash_to_row(n.attributes)
         end)
@@ -250,17 +253,8 @@ module OMF::OML
 
       when :links
         table = OmlTable.create @name + '/links', @link_schema, table_opts
-        # @links.each do |id, l|
-          # table.add_row @link_schema.hash_to_row(l.attributes)
-        # end
         table.add_rows(@links.map do |id, n|
-          # puts @link_schema.hash_to_row(n.attributes).inspect
-          # puts table.schema
-          # table.add_row @link_schema.hash_to_row(n.attributes)
-          # puts table.rows.inspect
-          # exit
-
-          @link_schema.hash_to_row(n.attributes)
+           @link_schema.hash_to_row(n.attributes)
         end)
         #puts table.rows.inspect
         on_update "__to_tables_links_#{table.object_id}" do |a|

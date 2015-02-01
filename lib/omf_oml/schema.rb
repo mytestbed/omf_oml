@@ -59,7 +59,7 @@ module OMF::OML
 
     def self.create(schema_description)
       if schema_description.kind_of? self
-        return schema_description
+        return schema_description.clone
       end
       return self.new(schema_description)
     end
