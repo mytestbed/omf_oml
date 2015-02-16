@@ -200,6 +200,7 @@ module OMF::OML
     end
 
     def _schema_for_table(table_name)
+      #raise ">>>SCHEMA"
       begin
         schema_descr = @db.schema(table_name).map do |col_name, cd|
           unless type = cd[:type] || FALLBACK_MAPPING[cd[:db_type]]
@@ -215,7 +216,8 @@ module OMF::OML
         #puts "SCHEMA_DESCR>>>> #{schema_descr}"
         schema = OmlSchema.new(schema_descr)
       rescue Sequel::Error => ex
-        raise "Problems reading schema of table '#{table_name}'. Does it exist? (#{@db.tables})"
+        #raise "Problems reading schema of table '#{table_name}'. Does it exist? (#{@db.tables})"
+        raise "Problems reading schema of table '#{table_name}'. Does it exist? - #{ex}"
       end
     end
 

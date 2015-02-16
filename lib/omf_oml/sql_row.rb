@@ -163,12 +163,28 @@ module OMF::OML
     def run(in_thread = true)
       return if @running
       if in_thread
-        Thread.new do
-          begin
-            _run
-          rescue Exception => ex
-            error "Exception in OmlSqlRow: #{ex}"
-            debug "Exception in OmlSqlRow: #{ex.backtrace.join("\n\t")}"
+        if Object.const_defined?("EM")
+          if @check_interval <= 0
+            Fiber.new do
+              _run_once_quite
+            end.resume
+          else
+            timer = EM.add_periodic_timer(@check_interval) do
+              Fiber.new do
+                unless _run_once_quite
+                  timer.cancel
+                end
+              end.resume
+            end
+          end
+        else
+          Thread.new do
+            begin
+              _run
+            rescue Exception => ex
+              error "Exception in OmlSqlRow: #{ex}"
+              debug "Exception in OmlSqlRow: #{ex.backtrace.join("\n\t")}"
+            end
           end
         end
       else
@@ -196,6 +212,16 @@ module OMF::OML
           end
         end
       end
+    end
+
+    def _run_once_quite
+      begin
+        return _run_once
+      rescue Exception => ex
+        warn ex
+        debug "\t", ex.backtrace.join("\n\t")
+      end
+      false
     end
 
     # Run a query on database an serve all rows found one at a time.
