@@ -169,13 +169,7 @@ module OMF::OML
               _run_once_quite
             end.resume
           else
-            timer = EM.add_periodic_timer(@check_interval) do
-              Fiber.new do
-                unless _run_once_quite
-                  timer.cancel
-                end
-              end.resume
-            end
+            _run_periodic_em
           end
         else
           Thread.new do
@@ -193,6 +187,42 @@ module OMF::OML
     end
 
     private
+
+    def _run_periodic_em
+      outstanding = 0
+      skipped = 0
+      timer = EM.add_periodic_timer(@check_interval) do
+        Fiber.new do
+          #puts "CHECK START >>> #{outstanding}"
+          if outstanding > 0
+            debug "Skip periodic query, previous one hasn't finished yet"
+            skipped += 1
+            if (skipped > 10)
+              # seem to have gotten stuck, retry again
+              timer.cancel
+              return _run_periodic_em
+            end
+          else
+            outstanding += 1
+            t = Time.now
+            begin
+              _run_once
+            rescue Sequel::DatabaseError => pex
+              debug pex
+              timer.cancel
+              return _run_periodic_em
+            rescue Exception => ex
+              warn ex
+              debug "#{ex.class}\t", ex.backtrace.join("\n\t")
+              return true
+            end
+            outstanding -= 1
+            skipped = 0
+            debug "Sql query took #{Time.now - t} sec"
+          end
+        end.resume
+      end
+    end
 
     def _run
       if @check_interval <= 0
@@ -217,9 +247,12 @@ module OMF::OML
     def _run_once_quite
       begin
         return _run_once
+      rescue Sequel::DatabaseError => pex
+        debug pex
       rescue Exception => ex
         warn ex
-        debug "\t", ex.backtrace.join("\n\t")
+        debug "#{ex.class}\t", ex.backtrace.join("\n\t")
+        return true
       end
       false
     end
@@ -235,6 +268,7 @@ module OMF::OML
         debug("Initial offset #{@offset} in '#{table_name}' with #{cnt} rows")
         @offset = 0 if @offset < 0
       end
+      #puts "QUERY>> #{@query.inspect}"
       @query.limit(@limit, @offset).each do |r|
         @row = r
         @on_new_vector_proc.each_value do |proc|

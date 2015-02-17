@@ -223,9 +223,9 @@ module OMF::OML
 
     def _def_query_for_table(table_name)
       t = table_name.to_sym
-      @db["SELECT _senders.name as oml_sender, a.* FROM #{t} AS a INNER JOIN _senders ON (_senders.id = a.oml_sender_id);"]
+      @db["SELECT _senders.name as oml_sender, a.* FROM #{t} AS a INNER JOIN _senders ON (_senders.id = a.oml_sender_id) ORDER BY oml_tuple_id;"]
       @db[t].select(:_senders__name___oml_sender).select_all(t).select_append(:_senders__name___oml_sender) \
-          .join('_senders'.to_sym, :id => :oml_sender_id)
+          .join('_senders'.to_sym, :id => :oml_sender_id).order(:oml_tuple_id)
       end
   end
 
