@@ -200,7 +200,7 @@ module OMF::OML
             if (skipped > 10)
               # seem to have gotten stuck, retry again
               timer.cancel
-              return _run_periodic_em
+              _run_periodic_em
             end
           else
             outstanding += 1
