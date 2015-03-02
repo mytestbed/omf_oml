@@ -173,6 +173,32 @@ module OMF::OML
       end
     end
 
+    # Set the table to an array of rows, remove old
+    # rows
+    #
+    def set_rows(rows, needs_casting = false)
+      synchronize do
+        oldSet = Set.new(@rows)
+        @rows = []
+        @row_id = 0
+        @offset = 0
+        added = rows.map { |row| _add_row(row, needs_casting) }
+        added = added.compact
+        newSet = Set.new(@rows)
+        added = (newSet - oldSet).to_a
+        unless added.empty?
+          _notify_content_changed(:added, added)
+        end
+        removed = (oldSet - newSet).to_a
+        unless removed.empty?
+          _notify_content_changed(:removed, removed)
+        end
+        #puts ">>>> #{{added: added, removed: removed}}"
+        #_notify_content_changed(:updated, {added: added, removed: removed})
+      end
+    end
+
+
     # Return a new table which only contains the rows of this
     # table whose value in column 'col_name' is equal to 'col_value'
     #

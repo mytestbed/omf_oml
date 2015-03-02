@@ -68,6 +68,7 @@ module OMF::OML
     #   All other options defined for OmlSqlRow#new
     #
     def create_table(table_name, opts = {})
+      puts ">>> CREATE TABLE #{table_name} - #{opts}"
       tn = opts.delete(:name) || table_name
       schema = opts.delete(:schema) || _schema_for_table(table_name)
       if q = opts.delete(:query)

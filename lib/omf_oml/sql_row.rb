@@ -29,12 +29,14 @@ module OMF::OML
     #   - limit: Number of rows to fetch each time [1000]
     #   - check_interval: Interval in seconds when to check for new data. If < 0, only run once.
     #   - query_interval: Interval between consecutive queries when processing large result set.
+    #   - peg_offset: Do not change offset after read (in case we use UPDATE to change state)
     #
     def initialize(sql_table_name, schema, query, opts = {})
       debug "query:  #{query.sql}"
       @sname = sql_table_name
       @schema = schema
       raise "Expected OmlSchema but got '#{schema.class}'" unless schema.is_a? OmlSchema
+      puts "QUERY>>>> #{query.sql}"
       @query = query
 
       unless @offset = opts[:offset]
@@ -46,9 +48,10 @@ module OMF::OML
       @check_interval = opts[:check_interval]
       @check_interval = -1 unless @check_interval
       @query_interval = opts[:query_interval]
+      @peg_offset = opts[:peg_offset] || false
 
       @on_new_vector_proc = {}
-
+      @on_new_set_proc = {}
       super opts[:name] || sql_table_name, schema
     end
 
@@ -107,6 +110,19 @@ module OMF::OML
       run() unless @on_new_vector_proc.empty?
     end
 
+    # Register a proc to be called when a new set of tuples arrived
+    # on this stream. The 'proc', should take two parameters, the
+    # array of new tuples having arrived and this object
+    #
+    def on_new_tuple_set(key = :_, &proc)
+      if proc
+        @on_new_set_proc[key] = proc
+      else
+        @on_new_set_proc.delete key
+      end
+      run() unless @on_new_set_proc.empty?
+    end
+
     # Return a table which will capture the content of this tuple stream.
     #
     # @param [string] name - Name to use for returned table
@@ -137,8 +153,10 @@ module OMF::OML
     # @param [Hash] opts Options to be passed on to Table constructor
     # @opts [boolean] opts :include_oml_internals If true will also include OML header columns
     # @opts [OmlSchema] opts :schema use specific schema for table (Needs to be a subset of the tuples schema)
+    # @opts [string] opts: :mode How tuples are added to table - :append (def) add tuple, :update refresh table on read
     #
     def to_table(name = nil, opts = {})
+      #puts "TO_TABLE>>>> #{opts}"
       unless name
         name = @sname
       end
@@ -150,12 +168,24 @@ module OMF::OML
           schema.replace_column_at 0, :oml_sender
         end
       end
-      t = OMF::OML::OmlTable.new(name, schema, opts)
+      mode = (opts.delete(:mode) || :append).to_sym
+      t = OMF::OML::OmlTable.create(name, schema, opts)
       #puts ">>>>SCHEMA>>> #{schema.inspect}"
-      self.on_new_tuple(t) do |v|
-        r = v.to_a(schema)
-        #puts r.inspect
-        t.add_row(r)
+      case mode
+        when :append
+          self.on_new_tuple_set(t) do |ra, v|
+            rows = ra.map {|r| @schema.hash_to_row(r)}
+            #puts rows.inspect
+            t.add_rows(rows)
+          end
+        when :update
+          self.on_new_tuple_set(t) do |ra, v|
+            rows = ra.map {|r| @schema.hash_to_row(r)}
+            #puts rows.inspect
+            t.set_rows(rows)
+          end
+        else
+          raise "Unknown mode '#{mode}', expected 'append' or 'update'."
       end
       t
     end
@@ -209,12 +239,14 @@ module OMF::OML
               _run_once
             rescue Sequel::DatabaseError => pex
               debug pex
+              debug pex.backtrace
               timer.cancel
-              return _run_periodic_em
+              _run_periodic_em
+              next
             rescue Exception => ex
               warn ex
               debug "#{ex.class}\t", ex.backtrace.join("\n\t")
-              return true
+              next
             end
             outstanding -= 1
             skipped = 0
@@ -268,17 +300,29 @@ module OMF::OML
         debug("Initial offset #{@offset} in '#{table_name}' with #{cnt} rows")
         @offset = 0 if @offset < 0
       end
-      #puts "QUERY>> #{@query.inspect}"
-      @query.limit(@limit, @offset).each do |r|
-        @row = r
-        @on_new_vector_proc.each_value do |proc|
+      #puts "QUERY>> #{@query.limit(@limit, @offset).inspect}"
+      # @query.limit(@limit, @offset).each do |r|
+      #   @row = r
+      #   @on_new_vector_proc.each_value do |proc|
+      #     proc.call(self)
+      #   end
+      #   row_cnt += 1
+      # end
+      rows = @query.limit(@limit, @offset).to_a
+      @on_new_vector_proc.each_value do |proc|
+        rows.each do |r|
+          @row = r
           proc.call(self)
         end
-        row_cnt += 1
       end
-      @offset += row_cnt
-      debug "Read #{row_cnt} (total #{@offset}) rows from '#{@sname}'" if row_cnt > 0
+      @on_new_set_proc.each_value do |proc|
+        proc.call(rows, self)
+      end
+      row_cnt = rows.size
+      @offset += row_cnt unless @peg_offset
+      debug "Read #{row_cnt} (offset #{@offset}) rows from '#{@sname}'" if row_cnt > 0
       if more_to_read = row_cnt >= @limit # there could be more to read
+        # TODO: Should NOT call sleep, especially when running in EM
         sleep @query_interval if @query_interval # don't hammer database
       end
       more_to_read
