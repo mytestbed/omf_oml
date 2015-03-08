@@ -16,6 +16,8 @@ module OMF::OML
   # with a call to +run+.
   #
   class OmlSqlRow < OmlTuple
+    HAS_EM = Object.const_defined?("EM")
+
     attr_reader :row
 
     #
@@ -31,13 +33,13 @@ module OMF::OML
     #   - query_interval: Interval between consecutive queries when processing large result set.
     #   - peg_offset: Do not change offset after read (in case we use UPDATE to change state)
     #
-    def initialize(sql_table_name, schema, query, opts = {})
-      debug "query:  #{query.sql}"
+    def initialize(sql_table_name, schema, query, database, opts = {})
+      debug "query:  #{query}"
       @sname = sql_table_name
       @schema = schema
       raise "Expected OmlSchema but got '#{schema.class}'" unless schema.is_a? OmlSchema
-      puts "QUERY>>>> #{query.sql}"
       @query = query
+      @database = database
 
       unless @offset = opts[:offset]
         @offset = 0
@@ -45,6 +47,7 @@ module OMF::OML
       @limit = opts[:limit]
       @limit = 1000 unless @limit
 
+      @stopped = false
       @check_interval = opts[:check_interval]
       @check_interval = -1 unless @check_interval
       @query_interval = opts[:query_interval]
@@ -170,17 +173,18 @@ module OMF::OML
       end
       mode = (opts.delete(:mode) || :append).to_sym
       t = OMF::OML::OmlTable.create(name, schema, opts)
+
       #puts ">>>>SCHEMA>>> #{schema.inspect}"
       case mode
         when :append
-          self.on_new_tuple_set(t) do |ra, v|
-            rows = ra.map {|r| @schema.hash_to_row(r)}
+          self.on_new_tuple_set(t) do |rows, v|
+            #rows = ra.map {|r| @schema.hash_to_row(r)}
             #puts rows.inspect
             t.add_rows(rows)
           end
         when :update
-          self.on_new_tuple_set(t) do |ra, v|
-            rows = ra.map {|r| @schema.hash_to_row(r)}
+          self.on_new_tuple_set(t) do |rows, v|
+            #rows = ra.map {|r| @schema.hash_to_row(r)}
             #puts rows.inspect
             t.set_rows(rows)
           end
@@ -190,143 +194,214 @@ module OMF::OML
       t
     end
 
+    def stop
+      return if @stopped
+      @stopped = true
+      @stop_proc.call() if @stop_proc
+      @on_new_vector_proc = {}
+      @on_new_set_proc = {}
+      @database = nil
+    end
+
     def run(in_thread = true)
       return if @running
-      if in_thread
-        if Object.const_defined?("EM")
-          if @check_interval <= 0
-            Fiber.new do
-              _run_once_quite
-            end.resume
-          else
-            _run_periodic_em
-          end
-        else
-          Thread.new do
-            begin
-              _run
-            rescue Exception => ex
-              error "Exception in OmlSqlRow: #{ex}"
-              debug "Exception in OmlSqlRow: #{ex.backtrace.join("\n\t")}"
-            end
-          end
+
+      _run(in_thread)
+    end
+
+    def _run(in_thread)
+      return if @stopped
+      if (@offset < 0)
+        df = @database.run_count_query(@query)
+        df.onSuccess do |cnt|
+          @offset = cnt + @offset # @offset was negative here
+          debug("Initial offset #{@offset} in '#{@sname}' with #{cnt} rows")
+          @offset = 0 if @offset < 0
+          _run(in_thread)
+        end
+        df.onFailure do |e|
+          warn "While running count query - #{e}"
         end
       else
-        _run
+        if @check_interval <= 0
+          _run_once
+        else
+          _run_every(@check_interval) do
+            _run_once
+          end
+        end
       end
+      # if in_thread
+      #   if Object.const_defined?("EM")
+      #     if @check_interval <= 0
+      #       Fiber.new do
+      #         _run_once_quite
+      #       end.resume
+      #     else
+      #       _run_periodic_em
+      #     end
+      #   else
+      #     Thread.new do
+      #       begin
+      #         _run
+      #       rescue Exception => ex
+      #         error "Exception in OmlSqlRow: #{ex}"
+      #         debug "Exception in OmlSqlRow: #{ex.backtrace.join("\n\t")}"
+      #       end
+      #     end
+      #   end
+      # else
+      #   _run
+      # end
     end
 
     private
 
-    def _run_periodic_em
-      outstanding = 0
-      skipped = 0
-      timer = EM.add_periodic_timer(@check_interval) do
+    def _run_every(interval, &block)
+      HAS_EM ? _run_every_em(interval, &block) : _run_every_thread(interval, &block)
+    end
+
+    def _run_every_em(interval, &block)
+      timer = EM::PeriodicTimer.new(interval) do
         Fiber.new do
-          #puts "CHECK START >>> #{outstanding}"
-          if outstanding > 0
-            debug "Skip periodic query, previous one hasn't finished yet"
-            skipped += 1
-            if (skipped > 10)
-              # seem to have gotten stuck, retry again
-              timer.cancel
-              _run_periodic_em
-            end
-          else
-            outstanding += 1
-            t = Time.now
-            begin
-              _run_once
-            rescue Sequel::DatabaseError => pex
-              debug pex
-              debug pex.backtrace
-              timer.cancel
-              _run_periodic_em
-              next
-            rescue Exception => ex
-              warn ex
-              debug "#{ex.class}\t", ex.backtrace.join("\n\t")
-              next
-            end
-            outstanding -= 1
-            skipped = 0
-            debug "Sql query took #{Time.now - t} sec"
+          begin
+            block.call
+          rescue Exception => ex
+            warn ex
+            debug "#{ex.class}\t", ex.backtrace.join("\n\t")
+            next
           end
         end.resume
       end
+      @stop_proc = lambda do
+        timer.cancel
+      end
     end
 
-    def _run
-      if @check_interval <= 0
-        #while _run_once; end
-        _run_once
-      else
-        @running = true
-        while (@running)
+    def _run_every_thread(interval, &block)
+      thread = Thread.new do
+        while (true)
           begin
-            unless _run_once
-              # All rows read, wait a bit for news to show up
-              sleep @check_interval
-            end
+            block.call
           rescue Exception => ex
             warn ex
-            debug "\t", ex.backtrace.join("\n\t")
+            debug "#{ex.class}\t", ex.backtrace.join("\n\t")
           end
+          sleep interval
         end
       end
-    end
-
-    def _run_once_quite
-      begin
-        return _run_once
-      rescue Sequel::DatabaseError => pex
-        debug pex
-      rescue Exception => ex
-        warn ex
-        debug "#{ex.class}\t", ex.backtrace.join("\n\t")
-        return true
+      @stop_proc = lambda do
+        thread.terminate
       end
-      false
     end
 
     # Run a query on database an serve all rows found one at a time.
     # Return true if there might be more rows in the database
     def _run_once
+      if @stopped
+        debug ">>>>>> STOPPED BUT STILL RUNNING"
+      end
+      return if @stopped
+
       row_cnt = 0
       t = table_name = @sname
-      if (@offset < 0)
-        cnt = @query.count()
-        @offset = cnt + @offset # @offset was negative here
-        debug("Initial offset #{@offset} in '#{table_name}' with #{cnt} rows")
-        @offset = 0 if @offset < 0
-      end
-      #puts "QUERY>> #{@query.limit(@limit, @offset).inspect}"
-      # @query.limit(@limit, @offset).each do |r|
-      #   @row = r
-      #   @on_new_vector_proc.each_value do |proc|
-      #     proc.call(self)
-      #   end
-      #   row_cnt += 1
-      # end
-      rows = @query.limit(@limit, @offset).to_a
-      @on_new_vector_proc.each_value do |proc|
-        rows.each do |r|
-          @row = r
-          proc.call(self)
+      df = @database.run_query(@query, @limit, @offset, @schema)
+      df.onSuccess do |rows|
+        @on_new_vector_proc.each_value do |proc|
+          rows.each do |r|
+            @row = r
+            proc.call(self)
+          end
         end
+        @on_new_set_proc.each_value do |proc|
+          proc.call(rows, self)
+        end
+        row_cnt = rows.size
+        @offset += row_cnt unless @peg_offset
+        debug "Read #{row_cnt} (offset #{@offset}) rows from '#{@sname}'" if row_cnt > 0
+        # if more_to_read = row_cnt >= @limit # there could be more to read
+        #   # TODO: Should NOT call sleep, especially when running in EM
+        #   sleep @query_interval if @query_interval # don't hammer database
+        # end
+        # more_to_read
       end
-      @on_new_set_proc.each_value do |proc|
-        proc.call(rows, self)
+      df.onFailure do |e|
+        warn "While running query - #{e} - #{@query}"
       end
-      row_cnt = rows.size
-      @offset += row_cnt unless @peg_offset
-      debug "Read #{row_cnt} (offset #{@offset}) rows from '#{@sname}'" if row_cnt > 0
-      if more_to_read = row_cnt >= @limit # there could be more to read
-        # TODO: Should NOT call sleep, especially when running in EM
-        sleep @query_interval if @query_interval # don't hammer database
-      end
-      more_to_read
     end
+
+    # def _run_periodic_em
+    #   outstanding = 0
+    #   skipped = 0
+    #   timer = EM.add_periodic_timer(@check_interval) do
+    #     Fiber.new do
+    #       #puts "CHECK START >>> #{outstanding}"
+    #       if outstanding > 0
+    #         debug "Skip periodic query, previous one hasn't finished yet"
+    #         skipped += 1
+    #         if (skipped > 10)
+    #           # seem to have gotten stuck, retry again
+    #           timer.cancel
+    #           _run_periodic_em
+    #         end
+    #       else
+    #         outstanding += 1
+    #         t = Time.now
+    #         begin
+    #           _run_once
+    #         rescue Sequel::DatabaseError => pex
+    #           debug pex
+    #           debug pex.backtrace
+    #           timer.cancel
+    #           _run_periodic_em
+    #           next
+    #         rescue Exception => ex
+    #           warn ex
+    #           debug "#{ex.class}\t", ex.backtrace.join("\n\t")
+    #           next
+    #         end
+    #         outstanding -= 1
+    #         skipped = 0
+    #         debug "Sql query took #{Time.now - t} sec"
+    #       end
+    #     end.resume
+    #   end
+    # end
+    #
+    # def _run
+    #   if @check_interval <= 0
+    #     #while _run_once; end
+    #     _run_once
+    #   else
+    #     @running = true
+    #     while (@running)
+    #       begin
+    #         unless _run_once
+    #           # All rows read, wait a bit for news to show up
+    #           sleep @check_interval
+    #         end
+    #       rescue Exception => ex
+    #         warn ex
+    #         debug "\t", ex.backtrace.join("\n\t")
+    #       end
+    #     end
+    #   end
+    # end
+
+    # def _run_once_quite
+    #   begin
+    #     return _run_once
+    #   rescue Sequel::DatabaseError => pex
+    #     debug pex
+    #   rescue Exception => ex
+    #     warn ex
+    #     debug "#{ex.class}\t", ex.backtrace.join("\n\t")
+    #     return true
+    #   end
+    #   false
+    # end
+
+
 
   end # OmlSqlRow
 

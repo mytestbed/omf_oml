@@ -107,6 +107,10 @@ module OMF::OML
       @schema
     end
 
+    def schema
+      @schema.map {|e| [e[:name], e[:type]]}
+    end
+
     def insert_column_at(index, col)
       @schema.insert(index, _create_col_descr(col))
     end
@@ -190,6 +194,12 @@ module OMF::OML
       end
       c.instance_variable_set('@schema', schema)
       c
+    end
+
+    def ==(other)
+      return false unless other.is_a? self.class
+
+      return other.schema == schema
     end
 
     def to_s

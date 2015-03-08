@@ -73,6 +73,11 @@ module OMF::OML
       @on_content_changed = {}
     end
 
+    # To be used with WeakRef to get back to the underlying object
+    def asSelf
+      self
+    end
+
     def rows
       #@indexed_rows ? @indexed_rows.values : @rows
       @rows
@@ -111,6 +116,11 @@ module OMF::OML
       else
         @on_content_changed.delete key
       end
+    end
+
+    # Return true if anyone is watching (on_content_changed) this table
+    def observed?
+      !@on_content_changed.empty?
     end
 
     def on_row_added(key, &block)
@@ -245,6 +255,10 @@ module OMF::OML
 
     def data_sources
       self
+    end
+
+    def to_s
+      "\#<#{self.class}:#{self.object_id} name: #{@name} rows: #{@rows.size}>"
     end
 
     private

@@ -10,6 +10,8 @@ require 'omf_base/lobject'
 require 'omf_oml/endpoint'
 require 'omf_oml/tuple'
 require 'omf_oml/sql_row'
+require 'uri'
+require 'weakref'
 
 module OMF::OML
 
@@ -20,6 +22,99 @@ module OMF::OML
   # start producing the streams.
   #
   class OmlSqlSource < OMF::Base::LObject
+    # Interval between attempts to stop OmlRows using this source
+    # from running if there is no one using hte associated tables
+    # anymore
+    CLEANUP_INTERVAL = 5
+
+    @@sources = {}
+    @@all_tables = []
+
+    # db_opts - Options used to create a Sequel adapter
+    #
+    # Sequel.connect(:adapter=>'postgres', :host=>'norbit.npc.nicta.com.au', :user=>'oml2', :password=>'omlisgoodforyou', :database=>'openflow-demo')
+    #
+    def self.create(db_opts, row_opts = {})
+      if source = @@sources[db_opts]
+        return source
+      end
+      key = db_opts
+      if db_opts.is_a? String
+        url = URI(db_opts)
+        db_opts = {adapter: url.scheme, host: url.host, url: db_opts}
+        db_opts[:port] = url.port if url.port
+        db_opts[:user] = url.user if url.user
+        db_opts[:password] = url.password if url.password
+        db = url.path
+        if db.start_with? '/'
+          db = db[1 .. -1]
+        end
+        if db.empty?
+          raise "Missing database name - #{url}"
+        end
+        db_opts[:database] = db
+      end
+      case db_opts[:adapter].to_sym
+        when :postgres
+          require 'omf_oml/sql_postgresql_source'
+          source = OmlPostgresqlSource.new(db_opts, row_opts)
+        else
+          raise "Can't figure out what database provider to use - #{db_opts}"
+      end
+      @@sources[key] = source
+      source
+    end
+
+    # Periodically called to check if all the created tables are still
+    # active.
+    #
+    def self.cleanup
+      return unless @@all_tables.size > 0
+
+      debug "Run cleanup"
+      @@all_tables = @@all_tables.select do |t|
+        next false unless t.weakref_alive?
+        _cleanup_source(t)
+        true
+      end
+    end
+
+    def self._cleanup_source(st)
+      return unless st.size > 0
+
+      now = Time.now.to_i
+      st.each do |ti|
+        #puts ">> CHECKING SOME TABLE - #{ti.object_id}"
+        # t: WeakRef.new(t), o: key, r: WeakRef.new(row), ts: Data.now.to_i
+        table = ti[:t]
+        next unless table
+
+        if table.weakref_alive?
+          #puts ">> CHECKING TABLE #{table} - #{table.observed?}"
+          ti[:ts] = now if table.observed?
+
+          if now - ti[:ts] > 10
+            #puts ">>>>>>>>> RELEASE TABLE '#{table}' - #{ti.object_id}"
+            row = ti[:r]
+            if row && row.weakref_alive?
+              debug "Stopping row '#{row}' for table '#{table}'"
+              row.stop
+            end
+            ti.clear
+            #puts ">>>>>>>>> RELEASED TABLE '#{table}' - #{ti} - #{ti.object_id}"
+          end
+        end
+      end
+    end
+
+    EM.add_periodic_timer(CLEANUP_INTERVAL) do
+      begin
+        self.cleanup
+      rescue => e
+        warn "Exception while cleaning up sql sources - #{e}"
+        debug e.backtrace.join("\n")
+      end
+    end
 
     # Sequel adaptors sometimes don't return a :type identifier,
     # but always return the :db_type. This is a list of maps which may not work
@@ -35,16 +130,16 @@ module OMF::OML
     # Sequel.connect(:adapter=>'postgres', :host=>'norbit.npc.nicta.com.au', :user=>'oml2', :password=>'omlisgoodforyou', :database=>'openflow-demo')
     #
     def initialize(db_opts, row_opts = {})
-      OMF::Base::Loggable.init_log('OmlSqlSource')
       @running = false
       @on_new_stream_procs = {}
       @tables = {}
-      @db_opts = db_opts
-      debug "Opening DB (#{db_opts})"
-      @db = Sequel.connect(db_opts)
-      debug "DB: #{@db.inspect}"
+      @oml_tables = []
+      @@all_tables << WeakRef.new(@oml_tables)
+      _set_db_opts(db_opts)
+      #debug "DB: #{@db.inspect}"
       @row_opts = row_opts
     end
+    protected :initialize
 
     # Register a proc to be called when a new stream was
     # discovered on this endpoint.
@@ -68,17 +163,37 @@ module OMF::OML
     #   All other options defined for OmlSqlRow#new
     #
     def create_table(table_name, opts = {})
-      puts ">>> CREATE TABLE #{table_name} - #{opts}"
-      tn = opts.delete(:name) || table_name
-      schema = opts.delete(:schema) || _schema_for_table(table_name)
-      if q = opts.delete(:query)
-        query = (q.is_a? String) ? @db[q] : q
-      else
-        query = _def_query_for_table(table_name)
+      opts[:name] ||= table_name
+      #puts ">>> CREATE TABLE #{table_name} - #{opts}"
+      t = @oml_tables.find do |el|
+        el[:o] == opts && el[:t] && el[:t].weakref_alive?
       end
-      r = OmlSqlRow.new(table_name, schema, query, opts)
+      if t
+        table = t[:t].asSelf
+        debug "Recycling table #{table} - #{t.object_id}"
+        return table
+      end
+
+      key = opts.dup
+      tn = opts.delete(:name) || table_name
+      # TODO: A bit of a hack here to delay assigning a unique name
+      tn = "Table#{rand(10**12)}" if (tn == '???')
+      schema = opts.delete(:schema) || _schema_for_table(tn)
+      q = opts.delete(:query) || _def_query_for_table(tn)
+      query = _preprocess_query(q)
+      #   query = (q.is_a? String) ? @db[q] : q
+      # else
+      #   query = _def_query_for_table(table_name)
+      # end
+      debug "Creating new table - #{opts}"
+      r = OmlSqlRow.new(tn, schema, query, self, opts)
       opts[:schema] = schema
-      r.to_table(tn, opts)
+      t = r.to_table(tn, opts)
+      def t.__sql_row__
+        return self
+      end
+      @oml_tables << { t: WeakRef.new(t), o: key, r: WeakRef.new(r), ts: Time.now.to_i }
+      t
     end
 
     # Call 'block' for every row in 'table_name' table.
@@ -106,13 +221,13 @@ module OMF::OML
     # needs to describe the SQL queries result set. Unfortunately we can only do very little
     # sanity checks here
     #
-    def query(sql, table_name, schema)
-      tbl = OmlTable.create(table_name, schema)
-      @db.fetch(sql).each do |row|
-        tbl << schema.hash_to_row(row)
-      end
-      tbl
-    end
+    # def query(sql, table_name, schema)
+    #   tbl = OmlTable.create(table_name, schema)
+    #   @db.fetch(sql).each do |row|
+    #     tbl << schema.hash_to_row(row)
+    #   end
+    #   tbl
+    # end
 
     #
     # Run a query on the database and return the result as an OmlTable. The provided schema
@@ -120,26 +235,26 @@ module OMF::OML
     # sanity checks here. The query will be defined in the provided block which is passed in
     # the Sequel Database object and is expected to return a Sequel Dataset instance.
     #
-    def query2(table_name, schema, &block)
-      tbl = OmlTable.create(table_name, schema)
-      q = block.call(@db)
-      unless q.is_a? Sequel::Dataset
-        raise "Expected a Sequel::Dataset object, but got '#{q.class}'"
-      end
-      q.each do |row|
-        tbl << tbl.schema.hash_to_row(row)
-      end
-      tbl
-    end
+    # def query2(table_name, schema, &block)
+    #   tbl = OmlTable.create(table_name, schema)
+    #   q = block.call(@db)
+    #   unless q.is_a? Sequel::Dataset
+    #     raise "Expected a Sequel::Dataset object, but got '#{q.class}'"
+    #   end
+    #   q.each do |row|
+    #     tbl << tbl.schema.hash_to_row(row)
+    #   end
+    #   tbl
+    # end
 
-    # Return a Sequel Dataset from 'table_name'. See Sequel documentation on
-    # what one can do with that.
-    #
-    # db_table_name Name of table in database
-    #
-    def dataset(db_table_name)
-      @db.from(db_table_name)
-    end
+    # # Return a Sequel Dataset from 'table_name'. See Sequel documentation on
+    # # what one can do with that.
+    # #
+    # # db_table_name Name of table in database
+    # #
+    # def dataset(db_table_name)
+    #   @db.from(db_table_name)
+    # end
 
     # Start checking the database for tables and create a new stream
     # by calling the internal +report_new_table+ method.
@@ -167,15 +282,15 @@ module OMF::OML
 
     protected
 
-    def run_once()
-      debug "Finding tables #{@db.tables}"
-      # first find tables
-      @db.tables.each do |tn|
-        table_name = tn.to_s
-        report_new_table(table_name) unless table_name.start_with?('_')
-      end
-      @tables
-    end
+    # def run_once()
+    #   debug "Finding tables #{@db.tables}"
+    #   # first find tables
+    #   @db.tables.each do |tn|
+    #     table_name = tn.to_s
+    #     report_new_table(table_name) unless table_name.start_with?('_')
+    #   end
+    #   @tables
+    # end
 
 
 
@@ -186,48 +301,48 @@ module OMF::OML
     # +on_new_stream+ is then called with the new stream as its single
     # argument.
     #
-    def report_new_table(table_name)
-      unless table =  @tables[table_name] # check if already reported before
-        debug "Found table: #{table_name}"
-        schema = _schema_for_table(table_name)
-        query = _def_query_for_table(table_name)
-        table = @tables[table_name] = OmlSqlRow.new(table_name, schema, query, @row_opts)
-        #table = @tables[table_name] = OmlSqlRow.new(table_name, @db.schema(table_name), @db_opts, self, @row_opts)
-        @on_new_stream_procs.each_value do |proc|
-          proc.call(table)
-        end
-      end
-      table
-    end
+    # def report_new_table(table_name)
+    #   unless table =  @tables[table_name] # check if already reported before
+    #     debug "Found table: #{table_name}"
+    #     schema = _schema_for_table(table_name)
+    #     query = _def_query_for_table(table_name)
+    #     table = @tables[table_name] = OmlSqlRow.new(table_name, schema, query, @row_opts)
+    #     #table = @tables[table_name] = OmlSqlRow.new(table_name, @db.schema(table_name), @db_opts, self, @row_opts)
+    #     @on_new_stream_procs.each_value do |proc|
+    #       proc.call(table)
+    #     end
+    #   end
+    #   table
+    # end
+    #
+    # def _schema_for_table(table_name)
+    #   #raise ">>>SCHEMA"
+    #   begin
+    #     schema_descr = @db.schema(table_name).map do |col_name, cd|
+    #       unless type = cd[:type] || FALLBACK_MAPPING[cd[:db_type]]
+    #         warn "Can't find ruby type for database type '#{cd[:db_type]}'"
+    #       end
+    #       if col_name == :oml_sender_id
+    #         # see _def_query_for_table(table_name) which replaces sender_id by sender name
+    #         col_name = :oml_sender
+    #         type = 'string'
+    #       end
+    #       {:name => col_name, :type => type}
+    #     end
+    #     #puts "SCHEMA_DESCR>>>> #{schema_descr}"
+    #     schema = OmlSchema.new(schema_descr)
+    #   rescue Sequel::Error => ex
+    #     #raise "Problems reading schema of table '#{table_name}'. Does it exist? (#{@db.tables})"
+    #     raise "Problems reading schema of table '#{table_name}'. Does it exist? - #{ex}"
+    #   end
+    # end
 
-    def _schema_for_table(table_name)
-      #raise ">>>SCHEMA"
-      begin
-        schema_descr = @db.schema(table_name).map do |col_name, cd|
-          unless type = cd[:type] || FALLBACK_MAPPING[cd[:db_type]]
-            warn "Can't find ruby type for database type '#{cd[:db_type]}'"
-          end
-          if col_name == :oml_sender_id
-            # see _def_query_for_table(table_name) which replaces sender_id by sender name
-            col_name = :oml_sender
-            type = 'string'
-          end
-          {:name => col_name, :type => type}
-        end
-        #puts "SCHEMA_DESCR>>>> #{schema_descr}"
-        schema = OmlSchema.new(schema_descr)
-      rescue Sequel::Error => ex
-        #raise "Problems reading schema of table '#{table_name}'. Does it exist? (#{@db.tables})"
-        raise "Problems reading schema of table '#{table_name}'. Does it exist? - #{ex}"
-      end
-    end
-
-    def _def_query_for_table(table_name)
-      t = table_name.to_sym
-      @db["SELECT _senders.name as oml_sender, a.* FROM #{t} AS a INNER JOIN _senders ON (_senders.id = a.oml_sender_id) ORDER BY oml_tuple_id;"]
-      @db[t].select(:_senders__name___oml_sender).select_all(t).select_append(:_senders__name___oml_sender) \
-          .join('_senders'.to_sym, :id => :oml_sender_id).order(:oml_tuple_id)
-      end
+  #   def _def_query_for_table(table_name)
+  #     t = table_name.to_sym
+  #     @db["SELECT _senders.name as oml_sender, a.* FROM #{t} AS a INNER JOIN _senders ON (_senders.id = a.oml_sender_id) ORDER BY oml_tuple_id;"]
+  #     @db[t].select(:_senders__name___oml_sender).select_all(t).select_append(:_senders__name___oml_sender) \
+  #         .join('_senders'.to_sym, :id => :oml_sender_id).order(:oml_tuple_id)
+  #     end
   end
 
 
