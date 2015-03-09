@@ -68,10 +68,12 @@ module OMF::OML
         raise "Expected query to start with 'select' - #{query}"
       end
       parts = q.split("from")
-      unless parts.length == 2
-        raise "Expected query to only contain ONE 'from' - #{query}"
+      if parts.length < 2
+        raise "Expected at least one FROM in query - #{query}"
       end
-      cq = "select count(*) from #{parts[1]}"
+      parts.shift # discard first select part to be replaced by count(*)
+      cq = "select count(*) from #{parts.join('from')}"
+      debug "Count query: #{cq}"
       df = run_query(cq, 0, 0, COUNT_SCHEMA)
       df.onSuccess do |r|
         #puts "COUNT>>>>> #{r}"
