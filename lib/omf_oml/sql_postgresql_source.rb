@@ -37,17 +37,18 @@ module OMF::OML
         df.callback do |result|
           @pool.release(conn)
           #schema.cast_row
-          rows = []
-          result.each_row do |raw_row|
-            rows << schema.cast_row(raw_row)
-          end
-          #puts ">>>> #{query[0 .. 60]} - #{rows.length}"
           Fiber.new do
             begin
+              rows = []
+              result.each_row do |raw_row|
+                rows << schema.cast_row(raw_row)
+              end
+          #puts ">>>> #{query[0 .. 60]} - #{rows.length}"
               cbk.success rows
             rescue => ex
               warn "While 'onSucess' callback - #{ex}"
               debug ex.backtrace.join("\n")
+              cbk.failure(ex)
             end
           end.resume
         end
