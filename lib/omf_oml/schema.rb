@@ -184,7 +184,7 @@ module OMF::OML
       describe.to_json(*opt)
     end
 
-    def clone(exclude_oml_internals = false)
+    def clone(exclude_oml_internals = false, col_zero_name = nil)
       c = self.dup
       schema = @schema.clone
       if exclude_oml_internals
@@ -193,6 +193,9 @@ module OMF::OML
         end
       end
       c.instance_variable_set('@schema', schema)
+      if col_zero_name
+        c.replace_column_at 0, col_zero_name
+      end
       c
     end
 

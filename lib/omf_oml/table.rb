@@ -34,7 +34,6 @@ module OMF::OML
 
     attr_reader :name
     attr_accessor :max_size
-    attr_reader :schema
     attr_reader :offset
 
     #
@@ -45,32 +44,59 @@ module OMF::OML
     # opts -
     #   :max_size - keep table to that size by dropping older rows
     #   :supress_index - don't pex, even if schema doesn't start with '__id__'
+    #   :on_before_row_added - called before a row is added
     #
     def initialize(tname, schema, opts = {}, &on_before_row_added)
-      super tname
+      super tname ||= "OmlTable#{object_id}"
       #@endpoint = endpoint
       @name = tname
+      @opts = opts
+      @on_schema = {}
+      self.schema = schema if schema
+      if (index = opts[:index])
+        throw "No longer supported, use IndexedTable instead"
+        # @indexed_rows = {}
+        # @index_col = @schema.index_for_col(index)
+      end
+      @on_before_row_added = @opts[:on_before_row_added] || on_before_row_added
+      @offset = 0 # number of rows skipped before the first one recorded here
+      @rows = []
+      @row_id = 0 # Each new row is assigned an id
+      @max_size = opts[:max_size]
+      @on_content_changed = {}
+    end
+
+    def schema=(schema)
+      raise "Can only set schema once" if @schema
       @schema = OmlSchema.create(schema)
       @add_index = false
-      unless opts[:supress_index]
+      unless @opts[:supress_index]
         unless @schema.name_at(0) == :__id__
           @add_index = true
           @schema.insert_column_at(0, [:__id__, 'int'])
         end
       end
       @col_count = @schema.columns.length
-      @opts = opts
-      if (index = opts[:index])
-        throw "No longer supported, use IndexedTable instead"
-        # @indexed_rows = {}
-        # @index_col = @schema.index_for_col(index)
+      @on_schema.values.each do |proc|
+        proc.call(@schema)
       end
-      @on_before_row_added = on_before_row_added
-      @offset = 0 # number of rows skipped before the first one recorded here
-      @rows = []
-      @row_id = 0 # Each new row is assigned an id
-      @max_size = opts[:max_size]
-      @on_content_changed = {}
+    end
+
+    def on_schema(key = nil, &proc)
+      if proc
+        if @schema
+          proc.call(@schema)
+        else
+          @on_schema[key || proc] = proc
+        end
+      else
+        @on_schema.delete key
+      end
+    end
+
+    def schema(fail_on_empty_schema = true)
+      raise "No schema set" if fail_on_empty_schema && !@schema
+      @schema
     end
 
     # To be used with WeakRef to get back to the underlying object
@@ -108,7 +134,7 @@ module OMF::OML
         @on_content_changed[key || proc] = proc
         if offset >= 0
           #with_offset = proc.arity == 2
-          proc.call(:added, @rows[offset .. -1])
+          proc.call(:added, @rows[offset .. -1] || [])
           #.each_with_index do |r, i|
             # with_offset ? proc.call(r, offset + i) : proc.call(r)
           # end
@@ -175,10 +201,19 @@ module OMF::OML
     #
     def add_rows(rows, needs_casting = false)
       synchronize do
-        added = rows.map { |row| _add_row(row, needs_casting) }
-        added = added.compact
-        unless added.empty?
-          _notify_content_changed(:added, added)
+        removed_rows = []
+        added = rows.map do |row|
+          _add_row(row, needs_casting) do |removed_row|
+            removed_rows << removed_row
+          end
+        end.compact
+        really_added = added - removed_rows
+        unless really_added.empty?
+          _notify_content_changed(:added, really_added)
+        end
+        really_removed = removed_rows - added
+        unless really_removed.empty?
+          _notify_content_changed(:removed, really_removed)
         end
       end
     end
@@ -265,8 +300,9 @@ module OMF::OML
 
     # NOT synchronized
     #
-    def _add_row(row, needs_casting = false)
-      throw "Expected array, but got '#{row}'" unless row.is_a?(Array)
+    def _add_row(row, needs_casting = false, &report_removed)
+      raise "Expected array, but got '#{row}'" unless row.is_a?(Array)
+      raise "No schema set" unless @schema
       if needs_casting
         row = @schema.cast_row(row, true)
       end
@@ -277,7 +313,7 @@ module OMF::OML
       return nil unless row
 
       row.insert(0, @row_id += 1) if @add_index
-      _add_row_finally(row)
+      _add_row_finally(row, &report_removed)
     end
 
     # Finally add 'row' to internal storage. This would be the method to
@@ -285,7 +321,7 @@ module OMF::OML
     # test have been performed. Should return the row added, or nil if nothing
     # was ultimately added.
     #
-    def _add_row_finally(row)
+    def _add_row_finally(row, &report_removed)
       unless row.length == @col_count
         raise "Unexpected col count for row '#{row}' - schema: #{@schema}"
       end
@@ -293,7 +329,11 @@ module OMF::OML
       @rows << row
       if @max_size && @max_size > 0 && (s = @rows.size) > @max_size
         if (removed_row = @rows.shift) # not necessarily fool proof, but fast
-          _notify_content_changed(:removed, [removed_row])
+          if report_removed
+            report_removed.call(removed_row)
+          else
+            _notify_content_changed(:removed, [removed_row])
+          end
         end
         @offset = @offset + 1
       end

@@ -67,7 +67,7 @@ module OMF::OML
 
     def initialize(name, schema)
       @stream_name = name
-      @schema = OmlSchema.create(schema)
+      @schema = OmlSchema.create(schema) if @schema
       @raw = []
       @on_new_tuple_procs = {}
       super name

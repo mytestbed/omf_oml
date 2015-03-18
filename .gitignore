@@ -2,3 +2,6 @@
 pkg
 lib/omf_oml/BACKUP
 .idea
+vendor
+.bundle
+Gemfile.lock

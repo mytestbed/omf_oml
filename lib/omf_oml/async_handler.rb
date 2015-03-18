@@ -10,9 +10,9 @@ module OMF::OML
 
   class AsyncHandler < OMF::Base::LObject
 
-    def onSuccess(&block)
+    def on_success(&block)
       if @success
-        block.call @success
+        _call @success, block
       else
         raise "Only one handler can be registered" if @successHandler
         @successHandler = block
@@ -20,9 +20,9 @@ module OMF::OML
       self
     end
 
-    def onFailure(&block)
+    def on_failure(&block)
       if @failure
-        block.call @failure
+        _call @failure, block
       else
         raise "Only one handler can be registered" if @failureHandler
         @failureHandler = block
@@ -32,17 +32,37 @@ module OMF::OML
 
     def success(success)
       if @successHandler
-        @successHandler.call(success)
+        _call success, @successHandler
       else
         @success = success
       end
     end
 
-    def failure(success)
+    def failure(failure)
       if @failureHandler
-        @failureHandler.call(success)
+        _call failure, @failureHandler
       else
-        @failure = success
+        @failure = failure
+      end
+    end
+
+    def chain(other)
+      other.on_success do |s|
+        success(s)
+      end
+      other.on_failure do |f|
+        failure(f)
+      end
+    end
+
+    def _call(arg, block)
+      EM.next_tick do
+        begin
+          block.call(arg)
+        rescue Exception => ex
+          warn "Caught exception in event handler - #{ex}"
+          debug ex.backtrace.join("\n\t")
+        end
       end
     end
 

@@ -25,14 +25,22 @@ module OMF::OML
     # Interval between attempts to stop OmlRows using this source
     # from running if there is no one using hte associated tables
     # anymore
-    CLEANUP_INTERVAL = 5
+    CLEANUP_INTERVAL = 60
+
+    # Release a table if it has been reported as unobserved for that many seconds
+    #
+    RELEASE_TABLE_AFTER_UNOBSERVED = 240
 
     @@sources = {}
     @@all_tables = []
+    @@reaper_running = false
 
     # db_opts - Options used to create a Sequel adapter
     #
-    # Sequel.connect(:adapter=>'postgres', :host=>'norbit.npc.nicta.com.au', :user=>'oml2', :password=>'omlisgoodforyou', :database=>'openflow-demo')
+    # Sequel.connect(:adapter=>'postgres', :host=>'norbit.npc.nicta.com.au', :user=>'oml2',
+    #                  :password=>'omlisgoodforyou', :database=>'openflow-demo')
+    #
+    # @opts db_opts wait_for_database Number of seconds to wait (and retry) if database doesn't exist yet
     #
     def self.create(db_opts, row_opts = {})
       if source = @@sources[db_opts]
@@ -40,20 +48,30 @@ module OMF::OML
       end
       key = db_opts
       if db_opts.is_a? String
-        url = URI(db_opts)
-        db_opts = {adapter: url.scheme, host: url.host, url: db_opts}
-        db_opts[:port] = url.port if url.port
-        db_opts[:user] = url.user if url.user
-        db_opts[:password] = url.password if url.password
-        db = url.path
-        if db.start_with? '/'
-          db = db[1 .. -1]
+        db_opts = _parse_db_url(db_opts)
+      else
+        # Assume it's a hash. Let's check if adapter is set
+        # and if not, is there a URL we can parse
+        unless db_opts[:adapter]
+          if url = db_opts[:url]
+            _parse_db_url(url, db_opts)
+          end
         end
-        if db.empty?
-          raise "Missing database name - #{url}"
-        end
-        db_opts[:database] = db
       end
+      #   url = URI(db_opts)
+      #   db_opts = {adapter: url.scheme, host: url.host, url: db_opts}
+      #   db_opts[:port] = url.port if url.port
+      #   db_opts[:user] = url.user if url.user
+      #   db_opts[:password] = url.password if url.password
+      #   db = url.path
+      #   if db.start_with? '/'
+      #     db = db[1 .. -1]
+      #   end
+      #   if db.empty?
+      #     raise "Missing database name - #{url}"
+      #   end
+      #   db_opts[:database] = db
+      # end
       case db_opts[:adapter].to_sym
         when :postgres
           require 'omf_oml/sql_postgresql_source'
@@ -62,7 +80,39 @@ module OMF::OML
           raise "Can't figure out what database provider to use - #{db_opts}"
       end
       @@sources[key] = source
+      if !@@reaper_running && EM.reactor_running?
+        @@reaper_running = true
+        EM.add_periodic_timer(CLEANUP_INTERVAL) do
+          begin
+            self.cleanup
+          rescue => e
+            warn "Exception while cleaning up sql sources - #{e}"
+            debug e.backtrace.join("\n")
+          end
+        end
+      else
+        OMF::Base::LObject.warn "Couldn't start reaper process because EM isn't running"
+      end
       source
+    end
+
+    def self._parse_db_url(url, db_opts = {})
+      url = URI(url)
+      db_opts[:adapter] = url.scheme
+      db_opts[:host] = url.host
+      db_opts[:url] = url.to_s
+      db_opts[:port] = url.port if url.port
+      db_opts[:user] = url.user if url.user
+      db_opts[:password] = url.password if url.password
+      db = url.path
+      if db.start_with? '/'
+        db = db[1 .. -1]
+      end
+      if db.empty?
+        raise "Missing database name - #{url}"
+      end
+      db_opts[:database] = db
+      db_opts
     end
 
     # Periodically called to check if all the created tables are still
@@ -71,7 +121,7 @@ module OMF::OML
     def self.cleanup
       return unless @@all_tables.size > 0
 
-      debug "Run cleanup"
+      debug "Run cleanup #{@@all_tables.size}"
       @@all_tables = @@all_tables.select do |t|
         next false unless t.weakref_alive?
         _cleanup_source(t)
@@ -93,7 +143,7 @@ module OMF::OML
           #puts ">> CHECKING TABLE #{table} - #{table.observed?}"
           ti[:ts] = now if table.observed?
 
-          if now - ti[:ts] > 10
+          if now - ti[:ts] > RELEASE_TABLE_AFTER_UNOBSERVED
             #puts ">>>>>>>>> RELEASE TABLE '#{table}' - #{ti.object_id}"
             row = ti[:r]
             if row && row.weakref_alive?
@@ -107,14 +157,7 @@ module OMF::OML
       end
     end
 
-    EM.add_periodic_timer(CLEANUP_INTERVAL) do
-      begin
-        self.cleanup
-      rescue => e
-        warn "Exception while cleaning up sql sources - #{e}"
-        debug e.backtrace.join("\n")
-      end
-    end
+
 
     # Sequel adaptors sometimes don't return a :type identifier,
     # but always return the :db_type. This is a list of maps which may not work
@@ -164,8 +207,9 @@ module OMF::OML
     #
     def create_table(table_name, opts = {})
       opts[:name] ||= table_name
-      #puts ">>> CREATE TABLE #{table_name} - #{opts}"
+      puts ">>> CREATE TABLE #{table_name} - #{opts}"
       t = @oml_tables.find do |el|
+        puts ">> COMPARE WITH #{el[:o]}"
         el[:o] == opts && el[:t] && el[:t].weakref_alive?
       end
       if t
@@ -178,22 +222,50 @@ module OMF::OML
       tn = opts.delete(:name) || table_name
       # TODO: A bit of a hack here to delay assigning a unique name
       tn = "Table#{rand(10**12)}" if (tn == '???')
-      schema = opts.delete(:schema) || _schema_for_table(tn)
+      schema = opts.delete(:schema)
+      include_oml_internals = (opts[:include_oml_internals] != false)
+      schema = schema.clone(!include_oml_internals, :oml_sender) if (schema)
+
+
       q = opts.delete(:query) || _def_query_for_table(tn)
-      query = _preprocess_query(q)
-      #   query = (q.is_a? String) ? @db[q] : q
-      # else
-      #   query = _def_query_for_table(table_name)
-      # end
-      debug "Creating new table - #{opts}"
-      r = OmlSqlRow.new(tn, schema, query, self, opts)
-      opts[:schema] = schema
-      t = r.to_table(tn, opts)
-      def t.__sql_row__
+      topts = opts.dup
+      topts.delete(:mode)
+
+      debug "Creating new table - #{topts}"
+      t = OMF::OML::OmlTable.create(tn, schema, topts)
+      feed_table(t, q, key)
+      t
+    end
+
+    #
+    def feed_table(table, query, opts = {})
+      key = opts.dup # used for re-identifying table
+      query = _preprocess_query(query)
+      schema = table.schema(false)
+      r = OmlSqlRow.new(table.name, schema, query, self, opts)
+      # t
+      # opts[:schema] = schema
+      # t = r.to_table(tn, opts)
+      def table.__sql_row__
         return self
       end
-      @oml_tables << { t: WeakRef.new(t), o: key, r: WeakRef.new(r), ts: Time.now.to_i }
-      t
+      mode = (opts.delete(:mode) || :append).to_sym
+      if schema
+        r.feed_table(table, mode)
+      else
+        # No schema yet, request from database
+        sf = get_schema_for_query(query)
+        sf.on_success do |schema|
+          table.schema = schema
+          r.feed_table(table, mode)
+        end
+        sf.on_failure do |ex|
+          warn "Can't obtain schema for #{table} - #{ex}"
+        end
+      end
+      puts ">>> REMEMBERIING TABLE #{table} with key: #{key}"
+      @oml_tables << { t: WeakRef.new(table), o: key, r: WeakRef.new(r), ts: Time.now.to_i }
+      table
     end
 
     # Call 'block' for every row in 'table_name' table.

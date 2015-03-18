@@ -36,8 +36,7 @@ module OMF::OML
     def initialize(sql_table_name, schema, query, database, opts = {})
       debug "query:  #{query}"
       @sname = sql_table_name
-      @schema = schema
-      raise "Expected OmlSchema but got '#{schema.class}'" unless schema.is_a? OmlSchema
+      @schema = OmlSchema.create(schema) if @schema
       @query = query
       @database = database
 
@@ -63,6 +62,7 @@ module OMF::OML
     # by it's name, or its col index
     #
     def [](name_or_index)
+      raise "No schema set" unless @schema
       if name_or_index.is_a? Integer
         @row[@schema.name_at_index(name_or_index)]
       else
@@ -77,7 +77,9 @@ module OMF::OML
     # associated schema or 'schema' if non-nil.
     #
     def to_a(schema = nil)
-      a = (schema || @schema).hash_to_row(@row) # don't need type conversion as sequel is doing this for us
+      schema ||= @schema
+      raise "No schema set" unless schema
+      a = schema.hash_to_row(@row) # don't need type conversion as sequel is doing this for us
     end
 
     # Return an array including the values for the names elements
@@ -173,25 +175,32 @@ module OMF::OML
       end
       mode = (opts.delete(:mode) || :append).to_sym
       t = OMF::OML::OmlTable.create(name, schema, opts)
+      feed_table(t, mode)
+      t
+    end
 
-      #puts ">>>>SCHEMA>>> #{schema.inspect}"
+    # Make this row source send any newly discovered rows to 'table'
+    #
+    # @param [OmlTable] table to feed
+    # @param [Symbol] mode .. :append new rows, :update replace table content by newly arrived patch
+    def feed_table(table, mode)
       case mode
         when :append
-          self.on_new_tuple_set(t) do |rows, v|
+          self.on_new_tuple_set(table) do |rows, v|
             #rows = ra.map {|r| @schema.hash_to_row(r)}
             #puts rows.inspect
-            t.add_rows(rows)
+            table.add_rows(rows)
           end
         when :update
-          self.on_new_tuple_set(t) do |rows, v|
+          self.on_new_tuple_set(table) do |rows, v|
             #rows = ra.map {|r| @schema.hash_to_row(r)}
             #puts rows.inspect
-            t.set_rows(rows)
+            puts ">>>> ADDING #{rows.length} to Table #{table}"
+            table.set_rows(rows)
           end
         else
           raise "Unknown mode '#{mode}', expected 'append' or 'update'."
       end
-      t
     end
 
     def stop
@@ -213,13 +222,13 @@ module OMF::OML
       return if @stopped
       if (@offset < 0)
         df = @database.run_count_query(@query)
-        df.onSuccess do |cnt|
+        df.on_success do |cnt|
           @offset = cnt + @offset # @offset was negative here
           debug("Initial offset #{@offset} in '#{@sname}' with #{cnt} rows")
           @offset = 0 if @offset < 0
           _run(in_thread)
         end
-        df.onFailure do |e|
+        df.on_failure do |e|
           warn "While running count query - #{e}"
         end
       else
@@ -306,7 +315,7 @@ module OMF::OML
       row_cnt = 0
       t = table_name = @sname
       df = @database.run_query(@query, @limit, @offset, @schema)
-      df.onSuccess do |rows|
+      df.on_success do |rows|
         @on_new_vector_proc.each_value do |proc|
           rows.each do |r|
             @row = r
@@ -325,8 +334,8 @@ module OMF::OML
         # end
         # more_to_read
       end
-      df.onFailure do |e|
-        warn "While running query - #{e} - #{@query}"
+      df.on_failure do |e|
+        warn "While running query - #{e} - #{@query.to_s.gsub("\n", " ")}"
       end
     end
 
